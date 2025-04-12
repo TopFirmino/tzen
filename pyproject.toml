@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=42.0.0", "wheel", "setuptools_scm>=6.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tzen"
+description = "A flexible Python test framework with fixtures and test automation"
+readme = "README.md"
+requires-python = ">=3.6"
+license = {text = "MIT"}
+dynamic = ["version"]
+authors = [
+    {name = "Lorenzo Furcas", email = "furcas.lorenzo@gmail.com"}
+]
+keywords = ["testing", "fixtures", "automation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = [
+    "typer>=0.4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/tzen"
+Documentation = "https://github.com/yourusername/tzen"
+Issues = "https://github.com/yourusername/tzen/issues"
+
+[project.scripts]
+tzen = "tzen.tz_cli:app"
+
+[tool.setuptools]
+package-dir = {"" = "tzen"}
+packages = ["tzen"]
+
+[tool.setuptools_scm]
+write_to = "tzen/_version.py"
+
+[tool.black]
+line-length = 88
+target-version = ["py36", "py37", "py38", "py39", "py310", "py311"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"

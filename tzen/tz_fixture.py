@@ -136,3 +136,11 @@ def use_fixture(fixture_class, mode:TZFixtureMode = TZFixtureMode.TEST_MODE, fix
         return test_class
     
     return _wrapper
+
+def get_fixtures_by_test(test_name:str) -> List[TZFixture]:
+    """Get all fixtures used by a test."""
+    
+    if test_name not in __TZEN_TEST_VS_FIXTURE_TABLE__:
+        return []
+    
+    return [__TZEN_FIXTURE_INSTANCES_TABLE__[fixture_name] for fixture_name in __TZEN_TEST_VS_FIXTURE_TABLE__[test_name]]

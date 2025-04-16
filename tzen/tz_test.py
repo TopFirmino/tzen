@@ -80,18 +80,16 @@ class TZTestObservable(TZObservable):
         return super().notify(interest, message)
 
 class TZTest(TZTestObservable):
-
-    steps:List[str] = []
-    blocking_steps:List[str] = []
-
-    _steps_class:List[TZStep] = []
-
+    """ Base class for all tests. It provides a mechanism to run a sequence of steps and notify observers about the test progress.
+    It also provides a mechanism to define steps as blocking or non-blocking. Blocking steps will stop the test execution if they fail.
+    """
+    
     interests:List[str] = [e.value for e in TZTestObservable.TZTestEventsEnum]
 
     def __init__(self):
         """Constructor of the TZTest class. It initializes the test and the logger."""
-        self.logger = tz_logging.TZTestLogger(self.__class__.__name__, len(self.steps))
         super().__init__()
+        self.logger = tz_logging.TZTestLogger(self.__class__.__name__, len(self.steps))
 
     def run(self) -> bool:
         
@@ -101,7 +99,7 @@ class TZTest(TZTestObservable):
 
         for i, _step in enumerate(self._steps_class):
             
-            self.logger.set_test_step(i)
+            self.logger.set_test_step(i + 1)
             self.notify(TZTest.TZTestEventsEnum.STEP_STARTED, self)
 
             try:
@@ -109,12 +107,13 @@ class TZTest(TZTestObservable):
 
             except AssertionError as e:
                 _step_res = False
+                self.error(f"{e}")
+                
                 
             except Exception as e:
-                tz_logging.error(f"Error in step {_step.idx} of test {self.__class__.__name__}")
-                tz_logging.error(e)
                 _step_res = False
-            
+                self.exception(e, show_locals=True)
+                
             self.notify(TZTest.TZTestEventsEnum.STEP_ENDED, self)
 
             test_res &= _step_res if _step_res is not None else True
@@ -132,35 +131,44 @@ class TZTest(TZTestObservable):
         return test_res
 
     def __init_subclass__(cls):
+        
+        # New TestClass initialization
+        if not hasattr(cls, "steps"):
+            cls.steps = []
 
-        cls._collect_steps_names()
+        if not hasattr(cls, "blocking_steps"):
+            cls.blocking_steps = []
+        
+        cls._steps_class = []
+        
+        TZTest._collect_steps_names(cls)
         if cls.__name__ not in __TZEN_TEST_TABLE__ and len(getattr(cls, 'steps', [])) > 0:
             __TZEN_TEST_TABLE__[cls.__name__] = cls
-            cls._collect_steps_classes()
+            TZTest._collect_steps_classes(cls)
 
-    @classmethod
-    def _collect_steps_classes(self):
+    @staticmethod
+    def _collect_steps_classes(test_class):
         
-        for i, _step_name in enumerate(self.steps):
-            self._steps_class.append( TZStep(   idx=i, 
-                                                func=getattr(self, _step_name), 
-                                                blocking= _step_name in self.blocking_steps,
-                                                args=[ get_type_hints(getattr(self, _step_name)).get(name) for name, param in inspect.signature(getattr(self, _step_name)).parameters.items() if param.kind in [inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.POSITIONAL_ONLY] ],
+        for i, _step_name in enumerate(test_class.steps):
+            test_class._steps_class.append( TZStep(   idx=i, 
+                                                func=getattr(test_class, _step_name), 
+                                                blocking= _step_name in test_class.blocking_steps,
+                                                args=[ get_type_hints(getattr(test_class, _step_name)).get(name) for name, param in inspect.signature(getattr(test_class, _step_name)).parameters.items() if param.kind in [inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.POSITIONAL_ONLY] ],
                                                 kwargs={} 
                                             ) 
                                     )
     
-    @classmethod  
-    def _collect_steps_names(self):
+    @staticmethod  
+    def _collect_steps_names(test_class):
         # Find all steps that has _tzen_step attribute
-        for attr_name in dir(self):
-            attr = getattr(self, attr_name)
+        for attr_name in dir(test_class):
+            attr = getattr(test_class, attr_name)
 
             if callable(attr) and getattr(attr, "_tzen_step", False):
-                self.steps.append(attr_name)
+                test_class.steps.append(attr_name)
 
                 if getattr(attr, "_tzen_step_blocking", False):
-                    self.blocking_steps.append(attr_name)
+                    test_class.blocking_steps.append(attr_name)
 
     @staticmethod
     def step(func):
@@ -189,3 +197,20 @@ class TZTest(TZTestObservable):
         wrapper_step._tzen_step_blocking = True
         return wrapper_step
 
+    def info(self, msg):
+        self.logger.info(msg)
+    
+    def warning(self, msg):
+        self.logger.warning(msg)
+    
+    def error(self, msg):
+        self.logger.error(msg)
+    
+    def exception(self, msg):
+        self.logger.exception(msg)
+    
+    def debug(self, msg):
+        self.logger.debug(msg)
+    
+    def critical(self, msg):
+        self.logger.critical(msg)

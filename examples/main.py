@@ -2,7 +2,7 @@ from tzen.tz_test import TZTest
 from tzen.tz_facade import TZFacade
 from tzen.tz_fixture import TZFixture, use_fixture
 import tzen.tz_conf as conf
-
+import time
 
 @conf.use_config("ADDRESS", "PORT")
 class MyFixture(TZFixture):
@@ -38,7 +38,7 @@ class TestExample(TZTest):
         self.lallero += 1
         self.logger.warning("Step1")
         self.fixturea.send_msg("test", "Ciao ciao")
-        
+        time.sleep(4)
         
     @TZTest.step
     def step2(self):

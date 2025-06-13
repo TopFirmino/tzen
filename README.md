@@ -14,3 +14,4 @@ TZen is a flexible Python test framework that provides fixtures, test automation
 
 ```bash
 pip install tzen
+```

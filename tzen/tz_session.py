@@ -33,14 +33,14 @@ class TZSessionStatus:
     terminated: bool = False
     details: Mapping[str, TZTestStatus] = None
 
-    
+
 class TZSession(TZObservable):
     """ Class to manage a test session. It allows to run tests and notify observers about test events."""
     interests = [e.value for e in TZSessionEvents]
     
-    def __init__(self, test_organizer:TZTestOrganizer):
+    def __init__(self, test_organizer:TZTestOrganizer) -> None:
         super().__init__()
-        self.status = TZSessionStatus(name="Test Session", total_tests=test_organizer.get_test_num())
+        self.status = TZSessionStatus(name="Test Session", total_tests=test_organizer.get_test_num(), details={})
         self.current_test: TZTest = None
         self.test_organizer = test_organizer
         self.fixture_manager = TZFixtureManager()
@@ -74,7 +74,7 @@ class TZSession(TZObservable):
                 self.fixture_manager.release_fixture(marker)    
             
         elif event == TZTestEvents.TEST_STATUS_CHANGED:
-            self.status.details = tz_test.status_
+            self.status.details[tz_test.__class__.__name__] = tz_test.status
             self.notify(TZSessionEvents.SESSION_STATUS_CHANGED, self)
          
     def start(self) -> None:

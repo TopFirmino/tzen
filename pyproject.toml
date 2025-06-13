@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tzen"
-description = "A flexible Python test framework with fixtures and test automation"
+description = "A flexible Python test framework for RBT Testcases"
 readme = "README.md"
 requires-python = ">=3.7"
 license = {text = "MIT"}
@@ -41,8 +41,6 @@ Issues = "https://github.com/yourusername/tzen/issues"
 
 [project.scripts]
 tzen = "tzen.tz_cli:app"
-
-
 
 [tool.setuptools_scm]
 write_to = "tzen/_version.py"

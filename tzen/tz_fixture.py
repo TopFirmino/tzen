@@ -2,145 +2,96 @@ from __future__ import annotations
 
 from typing import Mapping, List
 from enum import Enum
-import inspect
 from dataclasses import dataclass
-from .tz_test import TZTest, TZTestObserverMixin
 
 
+class TZFixtureScope(Enum):
+    """Enum to represent the scope of a fixture."""
+    TEST = "test"
+    MODULE = "module"
+    SESSION = "session"
+    
 @dataclass
-class _TZEN_FIXTURE_TABLE_ITEM_:
-    fixture_instance:TZFixture
-    fixture_class:TZFixture
-    fixture_args:dict
-    fixture_mode:TZFixtureMode
+class TZFixtureMarker():
+    """Dataclass to represent a fixtures marker for objects."""
+    cls: type[TZFixture]
+    obj: object = None # Instance of the fixture, will be set when the fixture is used
+    args: List[object] = None
+    kwargs: Mapping[str, object] = None
+    scope: TZFixtureScope = TZFixtureScope.TEST
     
+    def __getattr__(self, name):
+        if self.obj is not None:
+            return getattr(self.obj, name)
+        raise AttributeError(f"'TZFixtureMarker' has no attribute '{name}' and `obj` is not set.")
+
+    def __setattr__(self, name, value):
+        if name in {'obj', 'cls', 'args', 'kwargs', 'scope'} or self.obj is None:
+            super().__setattr__(name, value)
+        else:
+            setattr(self.obj, name, value)
+
+    def __call__(self, *args, **kwargs):
+        if self.obj is not None and callable(self.obj):
+            return self.obj(*args, **kwargs)
+        raise TypeError(f"'TZFixtureMarker' object is not callable or `obj` is not set.")
+
+    def __getitem__(self, key):
+        if self.obj is not None:
+            return self.obj[key]
+        raise TypeError(f"'TZFixtureMarker' object is not subscriptable or `obj` is not set.")
     
-# Table that maps each fixture class declared by inheritsing from TZFixture
-__TZEN_FIXTURE_TABLE__:Mapping[str, TZFixture] = {}
-
-# Table that maps each fixture instance created by the test
-# Each item has as key the fixture name for its instance and as value the fixture instance
-__TZEN_FIXTURE_INSTANCES_TABLE__:Mapping[str, _TZEN_FIXTURE_TABLE_ITEM_] = {}
-
-# This tables maps the relations between fixtures instances and test classes.
-__TZEN_FIXTURE_VS_TEST_TABLE__:Mapping[str, List[str] ] = {}
-__TZEN_TEST_VS_FIXTURE_TABLE__:Mapping[str, List[str] ] = {}
-
-
-class TZFixtureMode(str, Enum):
-    TEST_MODE       = "TEST_MODE"
-    STEP_MODE       = "STEP_MODE"
-    SESSION_MODE    = "SESSION_MODE"
-
-class TZFixture(TZTestObserverMixin):
+    def __hash__(self):
+        return hash((self.cls, tuple(self.args), frozenset(self.kwargs.items()), self.scope))
     
-    def cmd_setup(self):
-        if not self.is_setup:
-            self.setup()
-            self.is_setup = True
-            
-    def cmd_teardown(self):
-        if self.is_setup:
-            self.teardown()
-            self.is_setup = False
+def tz_use_fixture(fixture_class: type[TZFixture], *args, scope: TZFixtureScope = TZFixtureScope.TEST, **kwargs) -> TZFixture:
+    """Use a fixture class to create an instance of it."""
+    if not issubclass(fixture_class, TZFixture):
+        raise TypeError("fixture_class must be a subclass of TZFixture")
+    
+    return TZFixtureMarker (
+        obj=None,  # This will be set later when the fixture is used
+        cls=fixture_class,
+        args=list(args),
+        kwargs=dict(kwargs),
+        scope=scope)
+
+class TZFixtureManager:
+    """Manager for fixtures. It will keep track of all created fixtures and will return the correct instance based on the Marker."""
+    
+    def __init__(self):
+        self.fixtures: Mapping[TZFixtureMarker, TZFixture] = {}
+    
+    def get_fixture(self, marker: TZFixtureMarker) -> TZFixture:
+        """Get a fixture instance based on the marker."""
+        if marker not in self.fixtures:
+            fixture = marker.cls(*marker.args, **marker.kwargs)
+            self.fixtures[marker] = fixture
+            fixture.setup()
         
+        marker.obj = self.fixtures[marker]  # Set the instance in the marker
+            
+        return self.fixtures[marker]
+    
+    def release_fixture(self, marker: TZFixtureMarker):
+        """Release a fixture instance based on the marker."""
+        if marker in self.fixtures:
+            fixture = self.fixtures[marker]
+            fixture.teardown()
+            del self.fixtures[marker]
+            
+        marker.obj = None
+    
+    def release_all(self):
+        """Release all fixtures."""
+        for marker in list(self.fixtures.keys()):
+            self.release_fixture(marker)
+            
+class TZFixture:
+    
     def setup(self):
         raise NotImplementedError
 
     def teardown(self):
         raise NotImplementedError
-
-    def set_mode(self, mode:TZFixtureMode):
-        self.mode = mode
     
-    def __init_subclass__(cls):
-
-        if cls.__name__ not in __TZEN_FIXTURE_TABLE__:
-            __TZEN_FIXTURE_TABLE__[cls.__name__] = cls
-
-    def on_test_start(self, test):
-        if self.mode == TZFixtureMode.TEST_MODE:
-            self.setup()
-    
-    def on_test_end(self, test):
-        if self.mode == TZFixtureMode.TEST_MODE:
-            self.teardown()
-
-    def on_step_start(self, test):
-        if self.mode == TZFixtureMode.STEP_MODE:
-            self.setup()
-    
-    def on_step_end(self, test):
-        if self.mode == TZFixtureMode.STEP_MODE:
-            self.teardown()
-
-
-def get_fixture_instance(fixture_name) -> TZFixture:
-    """Creates a fixture instance if it does not exist yet."""
-    
-    if fixture_name not in __TZEN_FIXTURE_INSTANCES_TABLE__:
-        raise ValueError(f"Fixture {fixture_name} not found in the fixture instances table.")
-
-    if __TZEN_FIXTURE_INSTANCES_TABLE__[fixture_name].fixture_instance is None:    
-        _instance = __TZEN_FIXTURE_INSTANCES_TABLE__[fixture_name].fixture_class(**__TZEN_FIXTURE_INSTANCES_TABLE__[fixture_name].fixture_args)
-        setattr(_instance, "is_setup", False)
-        setattr(_instance, "mode", __TZEN_FIXTURE_INSTANCES_TABLE__[fixture_name].fixture_mode)
-        __TZEN_FIXTURE_INSTANCES_TABLE__[fixture_name].fixture_instance = _instance
-        
-        
-    return __TZEN_FIXTURE_INSTANCES_TABLE__[fixture_name].fixture_instance
-
-def setup_test_fixtures(test:TZTest):
-    """Setup all test fixtures."""
-    for fixture_name in __TZEN_TEST_VS_FIXTURE_TABLE__.get(test.__class__.__name__, []):
-        fixture = get_fixture_instance(fixture_name)
-        setattr(test, fixture_name, fixture)
-        fixture.attach_to_test(test)
-        
-def setup_session_fixtures():
-    """Setup all session fixtures."""
-    for k, fixture in __TZEN_FIXTURE_INSTANCES_TABLE__.items():
-        if fixture.fixture_mode == TZFixtureMode.SESSION_MODE:
-            _fixture_instance = get_fixture_instance(k)
-            _fixture_instance.cmd_setup()
-            
-def teardown_all_fixtures():
-    """Teardown all fixtures."""
-    for fixture_name in __TZEN_FIXTURE_INSTANCES_TABLE__.keys():
-        get_fixture_instance(fixture_name).cmd_teardown()
-
-def use_fixture(fixture_class, mode:TZFixtureMode = TZFixtureMode.TEST_MODE, fixture_name:str = None, **args):
-    
-    if fixture_class.__name__ not in __TZEN_FIXTURE_TABLE__:
-        raise ValueError(f"Fixture {fixture_class.__name__} not found in the fixture table. Make sure to inherit from TZFixture class.")
-    
-    if fixture_name is None:
-        fixture_name = fixture_class.__name__
-    
-    if fixture_name not in __TZEN_FIXTURE_INSTANCES_TABLE__:
-        __TZEN_FIXTURE_INSTANCES_TABLE__[fixture_name] = _TZEN_FIXTURE_TABLE_ITEM_(None, fixture_class, args, mode)
-    
-    def _wrapper(test_class):
-        test_name = test_class.__name__
-        
-        if fixture_name  not in __TZEN_FIXTURE_VS_TEST_TABLE__:
-            __TZEN_FIXTURE_VS_TEST_TABLE__[fixture_name] = [test_name]
-        else:
-            __TZEN_FIXTURE_VS_TEST_TABLE__[fixture_name].append(test_name)
-
-        if test_name not in __TZEN_TEST_VS_FIXTURE_TABLE__:
-            __TZEN_TEST_VS_FIXTURE_TABLE__[test_name] = [fixture_name]
-        else:
-            __TZEN_TEST_VS_FIXTURE_TABLE__[test_name].append(fixture_name)
-        
-        return test_class
-    
-    return _wrapper
-
-def get_fixtures_by_test(test_name:str) -> List[TZFixture]:
-    """Get all fixtures used by a test."""
-    
-    if test_name not in __TZEN_TEST_VS_FIXTURE_TABLE__:
-        return []
-    
-    return [__TZEN_FIXTURE_INSTANCES_TABLE__[fixture_name] for fixture_name in __TZEN_TEST_VS_FIXTURE_TABLE__[test_name]]

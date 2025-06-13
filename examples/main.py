@@ -1,58 +1,56 @@
-from tzen.tz_test import TZTest 
-from tzen.tz_facade import TZFacade
-from tzen.tz_fixture import TZFixture, use_fixture
-import tzen.tz_conf as conf
+from tzen.tz_test import TZTest, tz_step
+from tzen.tz_fixture import TZFixture, tz_use_fixture
+from tzen.tz_session import TZSession
+from tzen.tz_test_organizer import TZTestOrganizerList
+
 import time
 
-@conf.use_config("ADDRESS", "PORT")
 class MyFixture(TZFixture):
-     
-    def __init__(self):
-        print("Initializing fixture MyFixture")
+    """Example fixture class."""
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        print("Hello from MyFixture")
+        self.data = "Fixture data"
         
     def setup(self):
-        # Open the connection
-        self.connection = ( self.address, self.port )
-        print("Setup fixture")
+        print("MyFixture setup called")
         
     def teardown(self):
-        print("Teardown fixture")
-    
-    def send_msg(self, dst, payload):
-        print(f"Sending message to {self.connection} = {payload}")
-
-
-@use_fixture(MyFixture, fixture_name="fixturea")
+        print("MyFixture teardown called")
+        
+        
 class TestExample(TZTest):
     
-    # Needed for IDE linting
-    fixturea:MyFixture = None
-
+    my_fixture:MyFixture = tz_use_fixture(MyFixture)
+    
     def __init__(self):
         super().__init__()
-        self.logger.info("TestExample initialized")
         self.lallero = 0
         
-    @TZTest.step
+    @tz_step
     def step1(self):
         self.lallero += 1
         self.logger.warning("Step1")
-        self.fixturea.send_msg("test", "Ciao ciao")
         time.sleep(4)
         
-    @TZTest.step
+    @tz_step
     def step2(self):
         self.logger.warning( f"Step2 {self.lallero}")
         assert self.lallero == 4
 
-    @TZTest.step
+    @tz_step
     def step3(self):
         self.logger.error( f"Step3 {self.lallero}")
         assert self.lallero == 5
 
 
-tz_facade = TZFacade()
-tz_facade.load_configuration({"ADDRESS":"localhost", "PORT":8080, "OTHER": 33})
-tz_facade.run_tests(["TestExample"])
+session = TZSession(TZTestOrganizerList([TestExample]))
+session.start()
+
+
+# tz_facade = TZFacade()
+# tz_facade.load_configuration({"ADDRESS":"localhost", "PORT":8080, "OTHER": 33})
+# tz_facade.run_tests(["TestExample"])
 
 

@@ -1,216 +1,191 @@
-# Aggiungere Fixtures
 # Aggiungere Mechanism for verbosing assertions
 
 from __future__ import annotations
 
-from typing import Mapping, List, Callable, Tuple
-import functools
+from typing import Mapping, List, Callable
 import inspect
 from .tz_observer import TZObservable
-from typing import get_type_hints
 from dataclasses import dataclass
 from enum import Enum
-from . import tz_logging
+from .tz_logging import TZTestLogger
+from .tz_fixture import TZFixtureMarker
 
+# -----------------------------------------------------------------------------
 
+# Definitions
 __TZEN_TEST_TABLE__:Mapping[str, TZTest] = {}
+__TZEN_TEST_FIXTURES_TABLE__:Mapping[str, List[TZFixtureMarker]] = {}
 
 
-def get_test_table() -> Mapping[str, TZTest]:
-    return __TZEN_TEST_TABLE__
+class TZTestEvents(str, Enum):
+    """Enum for test events. It is used to notify observers about test progress."""
+    TEST_STARTED        = "TEST_STARTED"
+    STEP_STARTED        = "STEP_STARTED"
+    STEP_ENDED          = "STEP_ENDED"
+    TEST_FAILED         = "TEST_FAILED"
+    TEST_COMPLETED      = "TEST_COMPLETED"
+    TEST_ENDED          = "TEST_ENDED"
+    TEST_STATUS_CHANGED = "TEST_STATUS_CHANGED"
 
-
-class TZTestObserverMixin:
-    """ This class is used to attach the test observer to the test """
-    
-    def attach_to_test(self, test:TZTest):
-        test.attach(self.on_step_start,     TZTestObservable.TZTestEventsEnum.STEP_STARTED)
-        test.attach(self.on_step_end,       TZTestObservable.TZTestEventsEnum.STEP_ENDED)
-        test.attach(self.on_test_start,     TZTestObservable.TZTestEventsEnum.TEST_STARTED)
-        test.attach(self.on_test_end,       TZTestObservable.TZTestEventsEnum.TEST_ENDED)
-        test.attach(self.on_test_completed, TZTestObservable.TZTestEventsEnum.TEST_COMPLETED)
-        test.attach(self.on_test_failed,    TZTestObservable.TZTestEventsEnum.TEST_FAILED)
-        
-    def on_test_start(self, test):
-        pass
-    
-    def on_test_end(self, test):
-        pass
-    
-    def on_step_end(self, test):
-        pass
-    
-    def on_step_start(self, test):
-        pass
-    
-    def on_test_completed(self, test):
-        pass
-    
-    def on_test_failed(self, test):
-        pass
-    
-    
 @dataclass
 class TZStep:
-    args: List
-    kwargs: Mapping
-    
-    idx: int = 0
-    func: Callable[...,bool] = None
+    """Dataclass to represent a test step. It contains the name of the step, the function to execute and whether it is blocking or not."""
+    name: str
+    func: Callable
     blocking: bool = False
+
+@dataclass
+class TZTestStatus:
+    """Dataclass to represent the status of a test. It contains the name of the test, the number of steps and the current step."""
+    name: str
+    total_steps: int
+    current_step: int = 0
+    passed: bool = False
+    terminated: bool = False
     
-class TZTestObservable(TZObservable):
+# Public API
+def tz_get_test_table() -> Mapping[str, TZTest]:
+    return __TZEN_TEST_TABLE__
 
-    class TZTestEventsEnum(str, Enum):
-        TEST_STARTED    = "TEST_STARTED"
-        STEP_STARTED    = "STEP_STARTED"
-        STEP_ENDED      = "STEP_ENDED"
-        TEST_FAILED     = "TEST_FAILED"
-        TEST_COMPLETED  = "TEST_COMPLETED"
-        TEST_ENDED      = "TEST_ENDED"
+def tz_get_test_fixtures(name:str) -> List[TZFixtureMarker]:
+    """Get the fixtures for a test class from the fixtures table."""
+    
+    if name not in __TZEN_TEST_FIXTURES_TABLE__:
+        raise ValueError(f"Fixtures for test '{name}' not found in the fixtures table")
 
+    return __TZEN_TEST_FIXTURES_TABLE__[name] or []
 
-    def attach(self, observer_func:Callable[[TZTest],None], interest:TZTestEventsEnum):
-        return super().attach(observer_func, interest)
+def tz_step(func):
+    """Decorator to mark a function as a test step. It will be collected by the TZTest class and executed as a step in the test."""
+    # @functools.wraps(func)
+    # def wrapper_step(*args, **kwargs):
+    #     func(*args, **kwargs)
 
-    def detach(self, observer_func:Callable[[TZTest],None], interest:TZTestEventsEnum):
-        return super().detach(observer_func, interest)
+    func._tzen_step = True
+    func._tzen_step_blocking = False
+    return func
+    
+def tz_blocking_step(func):
+    """Decorator to mark a function as a blocking test step. It will be collected by the TZTest class and executed as a step in the test.
+    Blocking steps will stop the test execution if they fail."""
 
-    def notify(self, interest:TZTestEventsEnum, message:TZTest):
-        return super().notify(interest, message)
+    # @functools.wraps(func)
+    # def wrapper_step(*args, **kwargs):
+    #     func(*args, **kwargs)
 
-class TZTest(TZTestObservable):
+    func._tzen_step = True
+    func._tzen_step_blocking = True
+    return func
+
+# -----------------------------------------------------------------------------
+
+# TZTest Metaclass
+class TZTestMeta(type):
+    
+    def __init__(cls, name, bases, namespace):
+        
+        # Steps configured by user
+        explicit_step_names = getattr(cls, "steps", [])
+        explicit_blocking_step_names = getattr(cls, "blocking_steps", [])
+        explicit_steps = []
+        
+        for name in explicit_step_names:
+            method = namespace.get(name) or getattr(cls, name, None)
+            if callable(method):
+                explicit_steps.append(TZStep(name, method, name in explicit_blocking_step_names))
+
+        # Steps decorated with @step or @blocking_step
+        decorated_steps = []
+        
+        methods = inspect.getmembers(cls, inspect.isfunction)
+        methods = sorted( ((name, method) for name, method in methods if getattr(method, "_tzen_step", False)), key=lambda item: item[1].__code__.co_firstlineno)
+        for name, method in methods:
+            if name not in explicit_step_names:
+                decorated_steps.append(TZStep(name, method, getattr(method, "_tzen_step_blocking", False)))
+
+        # Union of explicit and decorated steps
+        cls._steps = explicit_steps + decorated_steps
+
+        _test_class_name = cls.__name__
+        
+        # Registrazione nel test table
+        if _test_class_name not in __TZEN_TEST_TABLE__ and len(cls._steps) > 0:
+            __TZEN_TEST_TABLE__[_test_class_name] = cls
+
+        # Register fixture markers
+        fixtures = inspect.getmembers(cls, lambda member: isinstance(member, TZFixtureMarker))
+        
+        for name, obj in fixtures:
+            if _test_class_name not in __TZEN_TEST_FIXTURES_TABLE__:
+                __TZEN_TEST_FIXTURES_TABLE__[_test_class_name] = [obj]
+            else:
+                __TZEN_TEST_FIXTURES_TABLE__[_test_class_name].append(obj)
+                
+        super().__init__(name, bases, namespace)
+
+class TZTest(TZObservable, metaclass=TZTestMeta):
     """ Base class for all tests. It provides a mechanism to run a sequence of steps and notify observers about the test progress.
-    It also provides a mechanism to define steps as blocking or non-blocking. Blocking steps will stop the test execution if they fail.
+    It also provide a mechanism to define steps as blocking or non-blocking. Blocking steps will stop the test execution if they fail.
     """
     
-    interests:List[str] = [e.value for e in TZTestObservable.TZTestEventsEnum]
+    interests:List[str] = [e.value for e in TZTestEvents]
 
+    @staticmethod
+    def get_fixture_markers(cls) -> List[TZFixtureMarker]:
+        """Get the fixture markers for the test class. It will return a list of TZFixtureMarker objects."""
+        if cls.__name__ in __TZEN_TEST_FIXTURES_TABLE__:
+            return __TZEN_TEST_FIXTURES_TABLE__[cls.__name__]
+        return []
+    
     def __init__(self):
         """Constructor of the TZTest class. It initializes the test and the logger."""
         super().__init__()
-        self.logger = tz_logging.TZTestLogger(self.__class__.__name__, len(self.steps))
+        self.logger = TZTestLogger(self.__class__.__name__, len(self._steps))
+        self.status = TZTestStatus(name=self.__class__.__name__, total_steps=len(self._steps))
 
+    def _set_status(self, **kwargs) -> None:
+        """Set the status of the test and notify observers."""
+        for key, value in kwargs.items():
+            if hasattr(self.status, key) and value is not None:
+                setattr(self.status, key, value)
+                
+        self.notify(TZTestEvents.TEST_STATUS_CHANGED, self.status)
+    
     def run(self) -> bool:
         
-        self.notify(TZTest.TZTestEventsEnum.TEST_STARTED, self)
+        self.notify(TZTestEvents.TEST_STARTED, self)
 
         test_res:bool = True
 
-        for i, _step in enumerate(self._steps_class):
+        for i, _step in enumerate(self._steps):
             
             self.logger.set_test_step(i + 1)
-            self.notify(TZTest.TZTestEventsEnum.STEP_STARTED, self)
+            self.notify(TZTestEvents.STEP_STARTED, self)
 
+            _step_res = False
+            
             try:
-                _step_res = _step.func(self)
+                _func_res = _step.func(self) 
+                _step_res = _func_res if _func_res is not None else True
 
             except AssertionError as e:
-                _step_res = False
-                self.error(f"{e}")
-                
+                self.logger.error(f"{e}")
                 
             except Exception as e:
-                _step_res = False
-                self.exception(e, show_locals=True)
+                self.logger.error(e)
                 
-            self.notify(TZTest.TZTestEventsEnum.STEP_ENDED, self)
+            self.notify(TZTestEvents.STEP_ENDED, self)
 
-            test_res &= _step_res if _step_res is not None else True
+            test_res &= _step_res
 
             if not test_res and _step.blocking:
                 break
         
         if test_res:
-            self.notify(TZTest.TZTestEventsEnum.TEST_COMPLETED, self)
+            self.notify(TZTestEvents.TEST_COMPLETED, self)
         else:
-            self.notify(TZTest.TZTestEventsEnum.TEST_FAILED, self)
+            self.notify(TZTestEvents.TEST_FAILED, self)
 
-        self.notify(TZTest.TZTestEventsEnum.TEST_ENDED, self)
+        self.notify(TZTestEvents.TEST_ENDED, self)
 
         return test_res
-
-    def __init_subclass__(cls):
-        
-        # New TestClass initialization
-        if not hasattr(cls, "steps"):
-            cls.steps = []
-
-        if not hasattr(cls, "blocking_steps"):
-            cls.blocking_steps = []
-        
-        cls._steps_class = []
-        
-        TZTest._collect_steps_names(cls)
-        if cls.__name__ not in __TZEN_TEST_TABLE__ and len(getattr(cls, 'steps', [])) > 0:
-            __TZEN_TEST_TABLE__[cls.__name__] = cls
-            TZTest._collect_steps_classes(cls)
-
-    @staticmethod
-    def _collect_steps_classes(test_class):
-        
-        for i, _step_name in enumerate(test_class.steps):
-            test_class._steps_class.append( TZStep(   idx=i, 
-                                                func=getattr(test_class, _step_name), 
-                                                blocking= _step_name in test_class.blocking_steps,
-                                                args=[ get_type_hints(getattr(test_class, _step_name)).get(name) for name, param in inspect.signature(getattr(test_class, _step_name)).parameters.items() if param.kind in [inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.POSITIONAL_ONLY] ],
-                                                kwargs={} 
-                                            ) 
-                                    )
-    
-    @staticmethod  
-    def _collect_steps_names(test_class):
-        # Find all steps that has _tzen_step attribute
-        for attr_name in dir(test_class):
-            attr = getattr(test_class, attr_name)
-
-            if callable(attr) and getattr(attr, "_tzen_step", False):
-                test_class.steps.append(attr_name)
-
-                if getattr(attr, "_tzen_step_blocking", False):
-                    test_class.blocking_steps.append(attr_name)
-
-    @staticmethod
-    def step(func):
-        class_name = func.__qualname__.split('.')[-2]
-        #__TZEN_TEST_TABLE__[class_name] = None
-
-        @functools.wraps(func)
-        def wrapper_step(*args, **kwargs):
-            func(*args, **kwargs)
-
-        wrapper_step._tzen_step = True
-        wrapper_step._tzen_step_blocking = False
-        return wrapper_step
-    
-    @staticmethod
-    def blocking_step(func):
-        class_name = func.__qualname__.split('.')[-2]
-        #__TZEN_TEST_TABLE__[class_name] = None
-
-        @functools.wraps(func)
-        def wrapper_step(*args, **kwargs):
-            func(*args, **kwargs)
-
-
-        wrapper_step._tzen_step = True
-        wrapper_step._tzen_step_blocking = True
-        return wrapper_step
-
-    def info(self, msg):
-        self.logger.info(msg)
-    
-    def warning(self, msg):
-        self.logger.warning(msg)
-    
-    def error(self, msg):
-        self.logger.error(msg)
-    
-    def exception(self, msg):
-        self.logger.exception(msg)
-    
-    def debug(self, msg):
-        self.logger.debug(msg)
-    
-    def critical(self, msg):
-        self.logger.critical(msg)

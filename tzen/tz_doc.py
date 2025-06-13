@@ -234,7 +234,6 @@ def build_documentation(test_environment:dict, output_folder:str):
         output_folder (str): The output folder.
     """
     
-    
     if CUSTOM_BACKEND is not None:
         # Use the custom backend if available
         doc_backend = CUSTOM_BACKEND(test_environment, output_folder)
@@ -244,60 +243,4 @@ def build_documentation(test_environment:dict, output_folder:str):
             
     doc_backend.build_documentation()
     
-    # test_template = template_env.from_string(MKDOCS_TEST_DESCRIPTION_TEMPLATE)
-            
     
-    # # Create index.md in the docs directory
-    # with open(os.path.join(docs_dir, "index.md"), "w") as f:
-    #     f.write("# Test Documentation\n\nWelcome to the test documentation.\n")
-    
-    # # Create directory and placeholder files for each module
-    # for module_name, module_data in modules.items():
-    #     module_dir = os.path.join(docs_dir, module_name.lower())
-    #     os.makedirs(module_dir, exist_ok=True)
-        
-    #     # Create module index file
-    #     with open(os.path.join(module_dir, "index.md"), "w") as f:
-    #         f.write(f"# {module_name.capitalize()} Module\n\n")
-    #         f.write(f"This section contains tests for the {module_name} module.\n")
-        
-    #     # Create test documentation files
-    #     for test_name in module_data["tests"]:
-    #         test_info = test_environment.get(test_name, {})
-            
-    #         # Extract test class information
-    #         test_class_info = {
-    #             "name": test_name,
-    #             "steps": []
-    #         }
-            
-    #         test_class_info.update(self.testclass_doc_to_dict(test_info.get('test_class').__doc__))
-            
-    #         # Extract steps if available
-    #         if 'steps' in test_info:
-    #             for step_name, step_info in test_info.get('steps', {}).items():
-    #                 test_class_info["steps"].append({
-    #                     "name": step_name,
-    #                     "doc": step_info.get('doc', '')
-    #                 })
-            
-    #         # Extract fixtures if available
-    #         fixtures = []
-    #         if 'fixtures' in test_info:
-    #             for fixture_name, fixture_info in test_info.get('fixtures', {}).items():
-    #                 fixtures.append({
-    #                     "name": fixture_name,
-    #                     "doc": fixture_info.get('doc', '')
-    #                 })
-            
-    #         # Render test documentation
-    #         rendered_test_doc = test_template.render(
-    #             test_name=test_name,
-    #             module_name=module_name,
-    #             test_class=test_class_info,
-    #             fixtures=fixtures
-    #         )
-            
-    #         # Write test documentation file
-    #         with open(os.path.join(module_dir, f"{test_name.lower()}.md"), "w") as f:
-    #             f.write(rendered_test_doc)

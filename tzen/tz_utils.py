@@ -1,5 +1,6 @@
 import inspect
 from pathlib import Path
+from typing import Tuple
 
 def _tz_get_class_full_path(cls: type) -> Path:
     """Get the full path of a class, including its module."""
@@ -17,6 +18,6 @@ def tz_get_class_full_name(cls: type) -> str:
     """Get the full name of a class, including its module."""    
     return _tz_get_class_full_path(cls).as_uri()
 
-def tz_get_class_full_name_parts(cls: type) -> tuple[str, str]:
+def tz_get_class_full_name_parts(cls: type) -> Tuple[str, str]:
     """Get the full name of a class, including its module and file path."""
     return _tz_get_class_full_path(cls).parts

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Mapping, List
+from typing import Mapping, List, Type
 from enum import Enum
 from dataclasses import dataclass
 from .tz_logging import TZFixtureLogger
@@ -14,7 +14,7 @@ class TZFixtureScope(Enum):
 @dataclass
 class TZFixtureMarker():
     """Dataclass to represent a fixtures marker for objects."""
-    cls: type[TZFixture]
+    cls: Type[TZFixture]
     obj: object = None # Instance of the fixture, will be set when the fixture is used
     args: List[object] = None
     kwargs: Mapping[str, object] = None
@@ -44,7 +44,12 @@ class TZFixtureMarker():
     def __hash__(self):
         return hash((self.cls, tuple(self.args), frozenset(self.kwargs.items()), self.scope))
     
-def tz_use_fixture(fixture_class: type[TZFixture], *args, scope: TZFixtureScope = TZFixtureScope.TEST, **kwargs) -> TZFixture:
+def tz_use_fixture(
+    fixture_class: Type[TZFixture],
+    *args,
+    scope: TZFixtureScope = TZFixtureScope.TEST,
+    **kwargs
+) -> TZFixture:
     """Use a fixture class to create an instance of it."""
     if not issubclass(fixture_class, TZFixture):
         raise TypeError("fixture_class must be a subclass of TZFixture")

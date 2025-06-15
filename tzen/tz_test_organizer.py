@@ -1,3 +1,4 @@
+from typing import List, Union
 from .tz_test import TZTest, tz_get_test_table
 
 class TZTestOrganizer:
@@ -15,19 +16,19 @@ class TZTestOrganizer:
         """Get the number of tests in the organizer. This method should be implemented by subclasses."""
         raise NotImplementedError("This method should be implemented by subclasses.")
     
-    def get_all_tests(self) -> list[TZTest]:
+    def get_all_tests(self) -> List[TZTest]:
         """Get all tests in the organizer. This method should be implemented by subclasses."""
         raise NotImplementedError("This method should be implemented by subclasses.")
     
-    def from_name_list(self, names: list[str]) -> None:
+    def from_name_list(self, names: List[str]) -> None:
         """Fetch tests by their names. This method should be implemented by subclasses."""
         raise NotImplementedError("This method should be implemented by subclasses.")
     
 class TZTestOrganizerList(TZTestOrganizer):
     """Class to organize tests in a list. It allows to add tests and retrieve them in the order they were added."""
-    def __init__(self, tests: list[TZTest] | list[str] = None):
+    def __init__(self, tests: Union[List[TZTest], List[str]] = None):
         super().__init__()
-        self.tests: list[TZTest] = []
+        self.tests: List[TZTest] = []
 
         # Handle initialization with a list of test classes or names
         if tests and len(tests) > 0:
@@ -56,11 +57,11 @@ class TZTestOrganizerList(TZTestOrganizer):
         """Get the number of tests in the organizer."""
         return len(self.tests)
     
-    def get_all_tests(self) -> list[TZTest]:
+    def get_all_tests(self) -> List[TZTest]:
         """Get all tests in the organizer."""
         return self.tests
     
-    def fetch_from_name_list(self, names):
+    def fetch_from_name_list(self, names: List[str]):
         """Fetch tests by their names. It will populate the tests list with the specified test classes."""
         if not isinstance(names, list):
             raise TypeError("names must be a list of test class names") 

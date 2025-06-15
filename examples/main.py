@@ -10,14 +10,14 @@ class MyFixture(TZFixture):
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        print("Hello from MyFixture")
+        self.logger.debug("Hello from MyFixture")
         self.data = "Fixture data"
         
     def setup(self):
-        print("MyFixture setup called")
+        self.logger.debug("MyFixture setup called")
         
     def teardown(self):
-        print("MyFixture teardown called")
+        self.logger.debug("MyFixture teardown called")
         
         
 class TestExample(TZTest):

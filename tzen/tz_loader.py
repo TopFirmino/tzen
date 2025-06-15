@@ -1,8 +1,12 @@
 import importlib
-import os   
-import sys
-from . import tz_logging
+import os
+from .tz_logging import tz_getLogger
 from typing import Mapping, Any
+
+# -----------------------------------------------------------------------------
+logger = tz_getLogger( __name__)
+
+# -----------------------------------------------------------------------------
 
 def import_all_modules_in_directory(directory: str, package: str) -> Mapping[str, Any]:
     """
@@ -49,7 +53,7 @@ def import_all_modules_in_directory(directory: str, package: str) -> Mapping[str
                     imported_modules[module_name] = module
                     
                 except Exception as e:
-                    tz_logging.exception(f"Error importing module {os.path.join(address, filename)}: {e}")
+                    logger.exception(f"Error importing module {os.path.join(address, filename)}: {e}")
                 
                                            
     return imported_modules

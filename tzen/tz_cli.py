@@ -1,7 +1,9 @@
 import typer
 from typing import List
 from .tz_facade import TZFacade
+from .tz_logging import tz_getLogger
 
+logger = tz_getLogger( __name__)
 app = typer.Typer()
 
 @app.command()
@@ -17,9 +19,9 @@ def start_session(
         config_file (str): Path to the configuration file (optional).
     """
 
-    print(f"Starting session in directory: {directory}")
-    print(f"Test cases to execute: {', '.join(testcases)}")
-    print(f"Using configuration file: {config_file}")
+    logger.info(f"Starting session in directory: {directory}")
+    logger.info(f"Test cases to execute: {', '.join(testcases)}")
+    logger.info(f"Using configuration file: {config_file}")
 
     facade = TZFacade()
     
@@ -43,9 +45,9 @@ def build_doc(
         output_folder (str): Folder where documentation will be generated.
     """
     
-    print(f"Building documentation for test cases in: {directory}")
-    print(f"Using configuration file: {config_file}")
-    print(f"Output will be saved to: {output_folder}")
+    logger.info(f"Building documentation for test cases in: {directory}")
+    logger.info(f"Using configuration file: {config_file}")
+    logger.info(f"Output will be saved to: {output_folder}")
     
     facade = TZFacade()
     

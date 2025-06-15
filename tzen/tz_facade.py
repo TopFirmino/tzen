@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from .tz_fixture import *
 from .tz_test import *
 from . import tz_conf as conf
-from .tz_monitor import TZTestMonitor
 from .tz_loader import import_all_modules_in_directory
 from .tz_doc import build_documentation
 import os
-import inspect
+from .tz_test_organizer import TZTestOrganizerList
+from .tz_session import TZSession
+from .tz_logging import tz_getLogger
 
-
+logger = tz_getLogger(__name__)
 class TZFacade:
     
     def __init__(self):
@@ -17,21 +17,6 @@ class TZFacade:
 
     def _get_testcase_by_name(self, name:str) -> TZTest:
         return get_test_table().get(name, None)
-
-    def _run_test(self, name:str, monitor:TZTestMonitor = None) -> None:
-        # Get the test class
-        _test_class = self._get_testcase_by_name(name)
-        
-        # Instantiate the test class eventually pass arguments
-        _test = _test_class()
-        
-        # Setup fixtures for the test
-        setup_test_fixtures(_test)
-        
-        # Attach the monitor to the test
-        monitor.attach_to_test(_test)
-        
-        _test.run()
     
     def load_configuration_from_file(self, config_file:str) -> None:
         """ Load the configuration from a file. Supported files are .json, .yaml, .yml, .toml """
@@ -63,41 +48,20 @@ class TZFacade:
         """ Load the configuration from a dictionary """
         for k, v in config.items():
             setattr(conf, k, v)
-            
-    def run_tests(self, names:List[str]):
-        
-        # Prepare fixtures for the session
-        setup_session_fixtures()
-        
-        # Create the test monitor
-        monitor = TZTestMonitor()
-        monitor.start_session(session_id="session1", tests=names)
-        
-        for test in names:
-            self._run_test(test, monitor=monitor)
-        
-        # At the end make sure to clear_all the fixtures
-        teardown_all_fixtures()
-        
-        monitor.end_session()
-        
+                    
     def start_session(self, tests_folder:str, tests:List[str] = []) -> None:
         """ Start a session and load all the tests from a folder """
         
         # Load all the test modules from the folder
         import_all_modules_in_directory(tests_folder, "tests")
         
-        # Get all the test classes
-        test_classes = set(get_test_table().keys())
+        # Create the correct test organizer based on the tests list
+        organizer = TZTestOrganizerList(tests)
         
-        if len(tests) > 0:
-            # Filter the test classes by name
-            test_classes = test_classes.intersection( set(tests) )
+        # Create the session
+        session = TZSession(organizer)
+        session.start()
         
-        # Sort test_classes by name
-        test_classes = sorted(test_classes)
-        self.run_tests(test_classes)
-            
     def build_documentation(self, tests_folder:str, output_folder:str) -> None:
         """ Generate the documentation for the tests """
         

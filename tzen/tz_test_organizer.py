@@ -35,7 +35,9 @@ class TZTestOrganizerList(TZTestOrganizer):
                 self.fetch_from_name_list(tests)
             elif issubclass(tests[0], TZTest):
                 self.tests.extend(tests)
-                
+        else:
+            self.fetch_all()
+            
     def fetch_all(self, order="asc"):
         """Fetch tests to be run. It will populate the tests list with all tests from the test table."""
         _test_table = tz_get_test_table()

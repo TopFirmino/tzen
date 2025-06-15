@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Mapping, List
 from enum import Enum
 from dataclasses import dataclass
-
+from .tz_logging import TZFixtureLogger
 
 class TZFixtureScope(Enum):
     """Enum to represent the scope of a fixture."""
@@ -88,6 +88,9 @@ class TZFixtureManager:
             self.release_fixture(marker)
             
 class TZFixture:
+    
+    def __init__(self):
+        self.logger = TZFixtureLogger(self.__class__.__name__)
     
     def setup(self):
         raise NotImplementedError

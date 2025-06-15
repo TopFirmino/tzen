@@ -169,7 +169,7 @@ class TZTest(TZObservable, metaclass=TZTestMeta):
                 _step_res = _func_res if _func_res is not None else True
 
             except AssertionError as e:
-                self.logger.error(f"{e}")
+                self.logger.exception(e)
                 
             except Exception as e:
                 self.logger.error(e)

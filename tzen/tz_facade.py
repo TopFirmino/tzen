@@ -5,9 +5,10 @@ from . import tz_conf as conf
 from .tz_loader import import_all_modules_in_directory
 from .tz_doc import build_documentation
 import os
-from .tz_test_organizer import TZTestOrganizerList
+from .tz_test_organizer import TZTestOrganizerList, TZTestOrganizerTree
 from .tz_session import TZSession
 from .tz_logging import tz_getLogger
+from pathlib import Path
 
 logger = tz_getLogger(__name__)
 class TZFacade:
@@ -49,15 +50,20 @@ class TZFacade:
         for k, v in config.items():
             setattr(conf, k, v)
                     
-    def start_session(self, tests_folder:str, tests:List[str] = []) -> None:
+    def start_session(self, tests_folder:str, tests:List[str] = [], **kwargs) -> None:
         """ Start a session and load all the tests from a folder """
         
         # Load all the test modules from the folder
         import_all_modules_in_directory(tests_folder, "tests")
         
         # Create the correct test organizer based on the tests list
-        organizer = TZTestOrganizerList(tests)
-        
+        if tests and isinstance(tests, list) and len(tests) > 0:
+            # If tests is a list of test names, use the list organizer
+            organizer = TZTestOrganizerList(tests)
+            
+        else:
+            organizer = TZTestOrganizerTree(root_path=Path(tests_folder))
+
         # Create the session
         session = TZSession(organizer)
         session.start()

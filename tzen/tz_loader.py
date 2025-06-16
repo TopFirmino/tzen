@@ -1,5 +1,6 @@
 import importlib
 import os
+import sys
 from .tz_logging import tz_getLogger
 from typing import Mapping, Any
 
@@ -41,7 +42,7 @@ def import_all_modules_in_directory(directory: str, package: str) -> Mapping[str
                     module = importlib.util.module_from_spec(spec)
 
                     # Registra il modulo in sys.modules
-                    # sys.modules[filename] = module
+                    sys.modules[filename] = module
 
                     # Esegui il codice del modulo
                     spec.loader.exec_module(module)

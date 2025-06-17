@@ -74,7 +74,7 @@ class TZTestOrganizerTree(TZTestOrganizer):
         """Class to represent a node in the test tree."""
         obj:object = None
         name:str = ""
-        children: 'List[TreeNode]' = field(default_factory=list)
+        children: List[TZTestOrganizerTree.TreeNode] = field(default_factory=list)
         path: Path = None
         
     def __init__(self, root_path: Path, tests: Union[List[TZTest], List[str]] = None):

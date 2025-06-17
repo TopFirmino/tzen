@@ -3,13 +3,15 @@
 from __future__ import annotations
 from .tz_test import TZTest, TZTestEvents, TZTestStatus
 from .tz_observer import TZObservable, TZEN_ALL_EVENT
-#from .tz_logging import tz_logger
+from .tz_logging import tz_getLogger
 from .tz_test_organizer import TZTestOrganizer
 from .tz_fixture import TZFixtureManager, TZFixtureMarker
 
 from typing import Mapping, Callable, List
 from dataclasses import dataclass
 from enum import Enum
+
+logger = tz_getLogger(__name__)
 
 #Definitions
 class TZSessionEvents(str, Enum):

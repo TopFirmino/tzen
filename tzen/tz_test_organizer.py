@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Union, Mapping
+from typing import List, Union
 from .tz_test import TZTest, tz_get_test_table
 from dataclasses import dataclass, field
 import inspect

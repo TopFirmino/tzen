@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=42.0.0", "wheel", "setuptools_scm>=6.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "tzen"
@@ -8,7 +8,7 @@ description = "A flexible Python test framework for RBT Testcases"
 readme = "README.md"
 requires-python = ">=3.7"
 license = {text = "MIT"}
-dynamic = ["version"]
+version = "0.1.0"
 authors = [
     {name = "Lorenzo Furcas", email = "furcas.lorenzo@gmail.com"}
 ]
@@ -42,8 +42,6 @@ Issues = "https://github.com/TopFirmino/tzen/issues"
 [project.scripts]
 tzen = "tzen.tz_cli:app"
 
-[tool.setuptools_scm]
-write_to = "tzen/_version.py"
 
 [tool.black]
 line-length = 88

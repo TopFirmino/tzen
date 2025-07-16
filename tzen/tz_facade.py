@@ -6,7 +6,7 @@ from .tz_loader import import_all_modules_in_directory
 from .tz_doc import build_documentation
 import os
 from .tz_test_organizer import TZTestOrganizerList, TZTestOrganizerTree
-from .tz_session import TZSession
+from .tz_session import TZSession, TZSessionMonitor
 from .tz_logging import tz_getLogger
 from pathlib import Path
 
@@ -67,7 +67,12 @@ class TZFacade:
 
         # Create the session
         session = TZSession(organizer)
+        monitor = TZSessionMonitor(session, organizer)
+        
+        monitor.start()
         session.start()
+        monitor.stop()
+        
         
     def build_documentation(self, tests_folder:str, output_folder:str) -> None:
         """ Generate the documentation for the tests """

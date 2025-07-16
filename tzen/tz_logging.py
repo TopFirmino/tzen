@@ -1,5 +1,6 @@
 import logging
 from rich.logging import RichHandler
+from rich.console import Console
 
 class TZTestFormatter(logging.Formatter):
     """Custom formatter for TZTest logs using Rich markup."""
@@ -64,12 +65,13 @@ class LastTraceRichHandler(RichHandler):
             #record.exc_text = f"{exc_type.__name__}: {exc_value}"
         super().emit(record)
 
-
+TZEN_GLOBAL_CONSOLE = Console()
 TZEN_ROOT_LOGGER_NAME = "tzen"
 # Configuring logger for tzen package
 root_logger = logging.getLogger(TZEN_ROOT_LOGGER_NAME)
-root_logger.setLevel(logging.INFO)
-root_handler = RichHandler(rich_tracebacks=True, markup=True, show_path=False, omit_repeated_times=False)
+root_logger.setLevel(logging.WARNING)
+root_handler = RichHandler(console = TZEN_GLOBAL_CONSOLE, rich_tracebacks=True, markup=True, show_path=False, omit_repeated_times=False)
+root_handler.setLevel(logging.WARNING)
 root_handler.setFormatter(logging.Formatter('%(name)s:\t%(message)s'))
 root_logger.addHandler(root_handler)
 
@@ -78,7 +80,7 @@ TZEN_ROOT_TEST_LOGGER_NAME = TZEN_ROOT_LOGGER_NAME + ".test"
 root_test_logger = logging.getLogger(TZEN_ROOT_TEST_LOGGER_NAME)
 root_test_logger.propagate = False
 root_test_logger.setLevel(logging.DEBUG)
-root_test_handler = LastTraceRichHandler(rich_tracebacks=True, show_path=False, omit_repeated_times=False, markup=True)
+root_test_handler = LastTraceRichHandler(console=TZEN_GLOBAL_CONSOLE, rich_tracebacks=True, show_path=False, omit_repeated_times=False, markup=True)
 root_test_handler.setFormatter(TZTestFormatter())
 root_test_logger.addHandler(root_test_handler)
 
@@ -87,12 +89,12 @@ TZEN_ROOT_FIXTURE_LOGGER_NAME = TZEN_ROOT_TEST_LOGGER_NAME + ".fixture"
 root_fixture_logger = logging.getLogger(TZEN_ROOT_FIXTURE_LOGGER_NAME)
 root_fixture_logger.propagate = False
 root_fixture_logger.setLevel(logging.DEBUG)
-root_fixture_handler = RichHandler(rich_tracebacks=True, show_path=False, omit_repeated_times=False, markup=True)
+root_fixture_handler = RichHandler(console=TZEN_GLOBAL_CONSOLE, rich_tracebacks=True, show_path=False, omit_repeated_times=False, markup=True)
 root_fixture_handler.setFormatter(TZFixtureFormatter())
 root_fixture_logger.addHandler(root_fixture_handler)
 
 
-def tz_getLogger(name: str, level: int = logging.DEBUG) -> logging.Logger:
+def tz_getLogger(name: str, level: int = logging.WARNING) -> logging.Logger:
     logger = logging.getLogger(TZEN_ROOT_LOGGER_NAME + '.' + name)
     logger.setLevel(level)
     return logger

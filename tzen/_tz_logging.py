@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# ---------------------------------------------------------------------------
+# Author:   Lorenzo Furcas (TopFirmino)
+# License:  MIT – see the LICENSE file in the repository root for details.
+# ---------------------------------------------------------------------------
 import logging
 from rich.logging import RichHandler
 from rich.console import Console
@@ -11,7 +17,8 @@ class TZTestFormatter(logging.Formatter):
         test_name = getattr(record, "test_name", "UnknownTest")
         test_step = getattr(record, "test_step", -1)
         test_step_num = getattr(record, "test_step_num", -1)
-
+        show_step_info = getattr(record, "show_step_info", True)
+        
         # Colori e simboli per livelli
         level_icons = {
             "DEBUG": "🐞",
@@ -27,9 +34,11 @@ class TZTestFormatter(logging.Formatter):
         test_info = f"[bold magenta]{test_name:<18}[/bold magenta]"
         step_info = f"[green]Step {test_step}/{test_step_num}[/green]" if test_step > 0 else ""
         msg = record.getMessage()
-
-        return f"{icon} {test_info} {step_info:<12} - [bold]{msg}[/bold]"
-    
+        if show_step_info:
+            return f"{icon} {test_info} {step_info:<12} - [bold]{msg}[/bold]"
+        else:
+            return f"{icon} {test_info} - [bold]{msg}[/bold]"
+            
 class TZFixtureFormatter(logging.Formatter):
     """Custom formatter for TZFixture logs using Rich markup."""
         
@@ -69,9 +78,9 @@ TZEN_GLOBAL_CONSOLE = Console()
 TZEN_ROOT_LOGGER_NAME = "tzen"
 # Configuring logger for tzen package
 root_logger = logging.getLogger(TZEN_ROOT_LOGGER_NAME)
-root_logger.setLevel(logging.WARNING)
+root_logger.setLevel(logging.INFO)
 root_handler = RichHandler(console = TZEN_GLOBAL_CONSOLE, rich_tracebacks=True, markup=True, show_path=False, omit_repeated_times=False)
-root_handler.setLevel(logging.WARNING)
+root_handler.setLevel(logging.INFO)
 root_handler.setFormatter(logging.Formatter('%(name)s:\t%(message)s'))
 root_logger.addHandler(root_handler)
 
@@ -79,8 +88,8 @@ root_logger.addHandler(root_handler)
 TZEN_ROOT_TEST_LOGGER_NAME = TZEN_ROOT_LOGGER_NAME + ".test"
 root_test_logger = logging.getLogger(TZEN_ROOT_TEST_LOGGER_NAME)
 root_test_logger.propagate = False
-root_test_logger.setLevel(logging.DEBUG)
-root_test_handler = LastTraceRichHandler(console=TZEN_GLOBAL_CONSOLE, rich_tracebacks=True, show_path=False, omit_repeated_times=False, markup=True)
+root_test_logger.setLevel(logging.INFO)
+root_test_handler = RichHandler(console=TZEN_GLOBAL_CONSOLE, rich_tracebacks=True, show_path=False, omit_repeated_times=False, markup=True)
 root_test_handler.setFormatter(TZTestFormatter())
 root_test_logger.addHandler(root_test_handler)
 
@@ -88,13 +97,15 @@ root_test_logger.addHandler(root_test_handler)
 TZEN_ROOT_FIXTURE_LOGGER_NAME = TZEN_ROOT_TEST_LOGGER_NAME + ".fixture"
 root_fixture_logger = logging.getLogger(TZEN_ROOT_FIXTURE_LOGGER_NAME)
 root_fixture_logger.propagate = False
-root_fixture_logger.setLevel(logging.DEBUG)
+root_fixture_logger.setLevel(logging.INFO)
 root_fixture_handler = RichHandler(console=TZEN_GLOBAL_CONSOLE, rich_tracebacks=True, show_path=False, omit_repeated_times=False, markup=True)
 root_fixture_handler.setFormatter(TZFixtureFormatter())
 root_fixture_logger.addHandler(root_fixture_handler)
 
-
-def tz_getLogger(name: str, level: int = logging.WARNING) -> logging.Logger:
+def tz_getLogger(name: str, level: int = logging.INFO) -> logging.Logger:
+    if name == "":
+        return logging.getLogger(TZEN_ROOT_LOGGER_NAME)
+    
     logger = logging.getLogger(TZEN_ROOT_LOGGER_NAME + '.' + name)
     logger.setLevel(level)
     return logger
@@ -116,8 +127,10 @@ class TZTestLogger():
     def debug(self, msg, *args, **kwargs):
         return self.logger.debug(msg, *args, extra=self.extras, **kwargs)
 
-    def info(self, msg, *args, **kwargs):
-        return self.logger.info(msg, *args, extra=self.extras, **kwargs)
+    def info(self, msg, *args, show_step_info=True, **kwargs):
+        _xtra = self.extras.copy()
+        _xtra["show_step_info"] = show_step_info
+        return self.logger.info(msg, *args, extra=_xtra, **kwargs)
 
     def warning(self, msg, *args, **kwargs):
         return self.logger.warning(msg, *args, extra=self.extras, **kwargs)

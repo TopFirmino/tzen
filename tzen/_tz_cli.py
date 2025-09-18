@@ -1,7 +1,13 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# ---------------------------------------------------------------------------
+# Author:   Lorenzo Furcas (TopFirmino)
+# License:  MIT – see the LICENSE file in the repository root for details.
+# ---------------------------------------------------------------------------
 import typer
 from typing import List
 from .tz_facade import TZFacade
-from .tz_logging import tz_getLogger
+from ._tz_logging import tz_getLogger
 
 logger = tz_getLogger( __name__)
 app = typer.Typer()
@@ -19,9 +25,9 @@ def start_session(
         config_file (str): Path to the configuration file (optional).
     """
 
-    logger.info(f"Starting session in directory: {directory}")
-    logger.info(f"Test cases to execute: {', '.join(testcases)}")
-    logger.info(f"Using configuration file: {config_file}")
+    logger.debug(f"Starting session in directory: {directory}")
+    logger.debug(f"Test cases to execute: {', '.join(testcases)}")
+    logger.debug(f"Using configuration file: {config_file}")
 
     facade = TZFacade()
     

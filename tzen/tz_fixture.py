@@ -1,105 +1,114 @@
-from __future__ import annotations
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# ---------------------------------------------------------------------------
+# Author:   Lorenzo Furcas (TopFirmino)
+# License:  MIT – see the LICENSE file in the repository root for details.
+# ---------------------------------------------------------------------------
+"""This modules provides the feature in order to create and fixtures."""
 
-from typing import Mapping, List, Type
-from enum import Enum
-from dataclasses import dataclass
-from .tz_logging import TZFixtureLogger
+
+from __future__ import annotations
+from enum import Enum, auto
+from typing import Mapping
+
+class TZFixtureType(Enum):
+    """Enumeration of fixture types."""
+    FUNCTION = "function"
+    CLASS = "class"
+    GENERATOR = "generator"
 
 class TZFixtureScope(Enum):
-    """Enum to represent the scope of a fixture."""
+    """Enumeration of fixture scopes."""
     TEST = "test"
-    MODULE = "module"
     SESSION = "session"
+    STEP = "step"  
     
-@dataclass
-class TZFixtureMarker():
-    """Dataclass to represent a fixtures marker for objects."""
-    cls: Type[TZFixture]
-    obj: object = None # Instance of the fixture, will be set when the fixture is used
-    args: List[object] = None
-    kwargs: Mapping[str, object] = None
-    scope: TZFixtureScope = TZFixtureScope.TEST
+class TZFixtureContainer:
     
-    def __getattr__(self, name):
-        if self.obj is not None:
-            return getattr(self.obj, name)
-        raise AttributeError(f"'TZFixtureMarker' has no attribute '{name}' and `obj` is not set.")
-
-    def __setattr__(self, name, value):
-        if name in {'obj', 'cls', 'args', 'kwargs', 'scope'} or self.obj is None:
-            super().__setattr__(name, value)
-        else:
-            setattr(self.obj, name, value)
-
-    def __call__(self, *args, **kwargs):
-        if self.obj is not None and callable(self.obj):
-            return self.obj(*args, **kwargs)
-        raise TypeError(f"'TZFixtureMarker' object is not callable or `obj` is not set.")
-
-    def __getitem__(self, key):
-        if self.obj is not None:
-            return self.obj[key]
-        raise TypeError(f"'TZFixtureMarker' object is not subscriptable or `obj` is not set.")
+    def __init__(self, name:str, scope:TZFixtureScope, ftype:TZFixtureType, fixture_class:type, on_demand:bool = True):
+        self.name = name
+        self.scope = scope
+        self.fixture_class = fixture_class
+        self.fixture_instance = None
+        self.is_setup = False
+        self.ftype = ftype
+        self.on_demand = on_demand  
     
-    def __hash__(self):
-        return hash((self.cls, tuple(self.args), frozenset(self.kwargs.items()), self.scope))
-    
-def tz_use_fixture(
-    fixture_class: Type[TZFixture],
-    *args,
-    scope: TZFixtureScope = TZFixtureScope.TEST,
-    **kwargs
-) -> TZFixture:
-    """Use a fixture class to create an instance of it."""
-    if not issubclass(fixture_class, TZFixture):
-        raise TypeError("fixture_class must be a subclass of TZFixture")
-    
-    return TZFixtureMarker (
-        obj=None,  # This will be set later when the fixture is used
-        cls=fixture_class,
-        args=list(args),
-        kwargs=dict(kwargs),
-        scope=scope)
-
-class TZFixtureManager:
-    """Manager for fixtures. It will keep track of all created fixtures and will return the correct instance based on the Marker."""
-    
-    def __init__(self):
-        self.fixtures: Mapping[TZFixtureMarker, TZFixture] = {}
-    
-    def get_fixture(self, marker: TZFixtureMarker) -> TZFixture:
-        """Get a fixture instance based on the marker."""
-        if marker not in self.fixtures:
-            fixture = marker.cls(*marker.args, **marker.kwargs)
-            self.fixtures[marker] = fixture
-            fixture.setup()
-        
-        marker.obj = self.fixtures[marker]  # Set the instance in the marker
+    def get_fixture(self):
+        """Get the fixture instance."""
+        if not self.is_setup:
+            self.setup()
             
-        return self.fixtures[marker]
-    
-    def release_fixture(self, marker: TZFixtureMarker):
-        """Release a fixture instance based on the marker."""
-        if marker in self.fixtures:
-            fixture = self.fixtures[marker]
-            fixture.teardown()
-            del self.fixtures[marker]
-            
-        marker.obj = None
-    
-    def release_all(self):
-        """Release all fixtures."""
-        for marker in list(self.fixtures.keys()):
-            self.release_fixture(marker)
-            
-class TZFixture:
-    
-    def __init__(self):
-        self.logger = TZFixtureLogger(self.__class__.__name__)
+        return self.fixture_instance
     
     def setup(self):
-        raise NotImplementedError
-
+        """Setup the fixture instance."""
+        if not self.is_setup:
+            
+            if self.ftype == TZFixtureType.CLASS:
+                self.fixture_instance = self.fixture_class()
+                self.fixture_instance.setup()
+                
+            elif self.ftype == TZFixtureType.FUNCTION:
+                # For function fixtures, we can call the fixture directly
+                # assuming it is a callable that returns the fixture instance
+                self.fixture_instance = self.fixture_class()
+                
+            elif self.ftype == TZFixtureType.GENERATOR:   
+                self.fixture_instance = next(self.fixture_class()) 
+                
+            else:
+                raise ValueError(f"Unsupported fixture type: {self.ftype}")
+            
+            
+            self.is_setup = True
+            
     def teardown(self):
-        raise NotImplementedError
+        """Teardown the fixture instance."""
+        if self.is_setup:
+            if self.ftype == TZFixtureType.CLASS:
+                self.fixture_instance.teardown()
+            elif self.ftype == TZFixtureType.GENERATOR:
+                self.fixture_class()
+            
+            self.fixture_instance = None    
+            self.is_setup = False
+
+
+__TZEN_FIXTURES__:Mapping[str, TZFixtureContainer] = {scope:{} for scope in TZFixtureScope}
+
+def tz_add_fixture(name:str,  fixture_class:type, scope:TZFixtureScope = TZFixtureScope.TEST, ftype:TZFixtureType = TZFixtureType.FUNCTION, on_demand:bool = True) -> None:
+    """Add a fixture to the specified scope."""
+    if scope not in __TZEN_FIXTURES__:
+        raise ValueError(f"Invalid fixture scope: {scope}")
     
+    if name in __TZEN_FIXTURES__[scope]:
+        raise ValueError(f"Fixture '{name}' already exists in scope '{scope}'")
+    
+    __TZEN_FIXTURES__[scope][name] = TZFixtureContainer(name, scope, ftype, fixture_class, on_demand=on_demand)
+
+def tz_get_fixture_by_name(name: str):
+    """Get a fixture by its name."""
+    if name in __TZEN_FIXTURES__[TZFixtureScope.TEST]:
+        return __TZEN_FIXTURES__[TZFixtureScope.TEST][name].get_fixture()
+    elif name in __TZEN_FIXTURES__[TZFixtureScope.SESSION]:
+        return __TZEN_FIXTURES__[TZFixtureScope.SESSION][name].get_fixture()
+    elif name in __TZEN_FIXTURES__[TZFixtureScope.STEP]:
+        return __TZEN_FIXTURES__[TZFixtureScope.STEP][name].get_fixture()
+    return None    
+
+def tz_teardown_by_scope(scope: TZFixtureScope) -> None:
+        """Teardown all fixtures in the specified scope."""
+        if scope not in __TZEN_FIXTURES__:
+            raise ValueError(f"Invalid fixture scope: {scope}")
+        
+        for fixture in __TZEN_FIXTURES__[scope].values():
+            fixture.teardown()
+    
+def tz_setup_by_scope(scope: TZFixtureScope) -> None:
+    """Setup all fixtures in the specified scope."""
+    if scope not in __TZEN_FIXTURES__:
+        raise ValueError(f"Invalid fixture scope: {scope}")
+    
+    for fixture in __TZEN_FIXTURES__[scope].values():
+        fixture.setup()       

@@ -1,35 +1,43 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# ---------------------------------------------------------------------------
+# Author:   Lorenzo Furcas (TopFirmino) 
+# License:  MIT – see the LICENSE file in the repository root for details.
+# ---------------------------------------------------------------------------
 from __future__ import annotations
+
+import os
+from pathlib import Path
 
 from .tz_test import *
 from . import tz_conf as conf
-from .tz_loader import import_all_modules_in_directory
-from .tz_doc import build_documentation
-import os
-from .tz_test_organizer import TZTestOrganizerList, TZTestOrganizerTree
-from .tz_session import TZSession, TZSessionMonitor
-from .tz_logging import tz_getLogger
-from pathlib import Path
+from ._tz_loader import import_all_modules_in_directory
+from ._tz_test_organizer import TZTestOrganizerList, TZTestOrganizerTree
+from .tz_session import TZSession
+from ._tz_logging import tz_getLogger
+from ._tz_plugins import get_pm, load_default_plugins, load_user_plugins
+
 
 logger = tz_getLogger(__name__)
 
 class TZFacade:
     
     def __init__(self):
-        pass
+        self.pm = get_pm()
+        # Load plugins once per interface instance
+        load_default_plugins()
+        #load_user_plugins(["tzen.plugins.reports.html_session_report"], use_entrypoints=False)
+        
 
-    def _get_testcase_by_name(self, name:str) -> TZTest:
-        return get_test_table().get(name, None)
     
     def load_configuration_from_file(self, config_file:str) -> None:
         """ Load the configuration from a file. Supported files are .json, .yaml, .yml, .toml """
         
-        # Check if file exists
         if not os.path.isfile(config_file):
             raise FileNotFoundError(f"Configuration file {config_file} does not exist")
         
         file_to_dict = None
         
-        # Check the file extension
         if config_file.endswith(".json"):
             import json
             file_to_dict = json.load
@@ -44,50 +52,48 @@ class TZFacade:
         
         # Load the configuration from the file
         with open(config_file, "r") as f:
-            self.load_configuration(file_to_dict(f) )
+            self.load_configuration(file_to_dict(f))
         
     def load_configuration(self, config:dict) -> None:
         """ Load the configuration from a dictionary """
         for k, v in config.items():
             setattr(conf, k, v)
                     
-    def start_session(self, tests_folder:str, tests:List[str] = [], **kwargs) -> None:
+    def start_session(self, tests_folder:str, tests:List[str] = [], report_output_file: Path = "./report.html", **kwargs) -> None:
         """ Start a session and load all the tests from a folder """
         
         # Load all the test modules from the folder
-        import_all_modules_in_directory(tests_folder, "tests")
+        import_all_modules_in_directory(tests_folder)
         
         # Create the correct test organizer based on the tests list
         if tests and isinstance(tests, list) and len(tests) > 0:
             # If tests is a list of test names, use the list organizer
-            organizer = TZTestOrganizerList(tests)
-            
+            organizer = TZTestOrganizerList(tests=tz_get_test_table(tests))
         else:
-            organizer = TZTestOrganizerTree(root_path=Path(tests_folder))
+            organizer = TZTestOrganizerTree(root_path = Path(tests_folder).resolve(), tests=tz_get_test_table(tests))
 
         # Create the session
         session = TZSession(organizer)
-        monitor = TZSessionMonitor(session, organizer)
-        
-        monitor.start()
         session.start()
-        monitor.stop()
         
+        # Hook: Session Report
+        self.pm.hook.build_session_report(session=session.info, config=conf, logger=logger, output_file=report_output_file)
+
         
-    def build_documentation(self, tests_folder:str, output_folder:str) -> None:
-        """ Generate the documentation for the tests """
+    # def build_documentation(self, tests_folder:str, output_folder:str) -> None:
+    #     """ Generate the documentation for the tests """
         
-        # Load all the test modules from the folder
-        test_environment_structure = {k:{"module": v, "tests":[], "path": ""} for k, v in import_all_modules_in_directory(tests_folder, "tests").items()}
-        common_prefix = os.path.commonprefix([ x["module"].__file__ for x in test_environment_structure.values()])
+    #     # Load all the test modules from the folder
+    #     test_environment_structure = {k:{"module": v, "tests":[], "path": ""} for k, v in import_all_modules_in_directory(tests_folder, "tests").items()}
+    #     common_prefix = os.path.commonprefix([ x["module"].__file__ for x in test_environment_structure.values()])
         
-        # Update the test_environment_structure with the path to the test modules and the testcases inside those modules
-        for k, v in test_environment_structure.items():
-            test_environment_structure[k]["path"] = os.path.relpath(v["module"].__file__[:-3], common_prefix)
-            for test_name, test_class in get_test_table().items():
-                if test_class.__module__[:-3] == k:
-                    test_environment_structure[k]["tests"] += [test_class]
+    #     # Update the test_environment_structure with the path to the test modules and the testcases inside those modules
+    #     for k, v in test_environment_structure.items():
+    #         test_environment_structure[k]["path"] = os.path.relpath(v["module"].__file__[:-3], common_prefix)
+    #         for test_name, test_class in get_test_table().items():
+    #             if test_class.__module__[:-3] == k:
+    #                 test_environment_structure[k]["tests"] += [test_class]
             
        
-        build_documentation(test_environment_structure, output_folder)
+    #     build_documentation(test_environment_structure, output_folder)
         

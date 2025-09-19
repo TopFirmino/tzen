@@ -28,8 +28,6 @@ class TZFacade:
         load_default_plugins()
         #load_user_plugins(["tzen.plugins.reports.html_session_report"], use_entrypoints=False)
         
-
-    
     def load_configuration_from_file(self, config_file:str) -> None:
         """ Load the configuration from a file. Supported files are .json, .yaml, .yml, .toml """
         
@@ -79,21 +77,14 @@ class TZFacade:
         # Hook: Session Report
         self.pm.hook.build_session_report(session=session.info, config=conf, logger=logger, output_file=report_output_file)
 
+    def build_documentation(self, tests_folder:str, output_folder:str) -> None:
+        """ Generate the documentation for the tests """
         
-    # def build_documentation(self, tests_folder:str, output_folder:str) -> None:
-    #     """ Generate the documentation for the tests """
+        # Load all the test modules from the folder
+        import_all_modules_in_directory(tests_folder)
         
-    #     # Load all the test modules from the folder
-    #     test_environment_structure = {k:{"module": v, "tests":[], "path": ""} for k, v in import_all_modules_in_directory(tests_folder, "tests").items()}
-    #     common_prefix = os.path.commonprefix([ x["module"].__file__ for x in test_environment_structure.values()])
-        
-    #     # Update the test_environment_structure with the path to the test modules and the testcases inside those modules
-    #     for k, v in test_environment_structure.items():
-    #         test_environment_structure[k]["path"] = os.path.relpath(v["module"].__file__[:-3], common_prefix)
-    #         for test_name, test_class in get_test_table().items():
-    #             if test_class.__module__[:-3] == k:
-    #                 test_environment_structure[k]["tests"] += [test_class]
+        organizer = TZTestOrganizerTree(root_path = Path(tests_folder).resolve(), tests=tz_get_test_table())
             
-       
-    #     build_documentation(test_environment_structure, output_folder)
+        # Hook: Session Report
+        self.pm.hook.build_docs(organizer=organizer, config=conf, logger=logger, output_folder=Path(output_folder).resolve())
         

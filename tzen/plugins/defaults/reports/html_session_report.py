@@ -1,6 +1,11 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# ---------------------------------------------------------------------------
+# Author:   Lorenzo Furcas (TopFirmino) 
+# License:  MIT – see the LICENSE file in the repository root for details.
+# ---------------------------------------------------------------------------
+
 import pluggy
-from string import Template
-from html import escape
 from pathlib import Path
 from jinja2 import Environment
 from datetime import datetime
@@ -143,7 +148,6 @@ HTML_TEMPLATE = """<!doctype html>
 </html>
 """
 
-
 def _ts_iso(ts: float | int) -> str:
     """POSIX ts -> ISO local (YYYY-MM-DD HH:MM:SS)"""
     try:
@@ -178,8 +182,7 @@ def build_session_report(session:TZSessionInfo, config, logger, output_file: Pat
   
   template = env.from_string(HTML_TEMPLATE)
   template.globals['TZTestStatusType'] = TZTestStatusType
-  
-    
+
   ctx = {
     "report_title": None,
     "executed_tests": session.executed_tests,

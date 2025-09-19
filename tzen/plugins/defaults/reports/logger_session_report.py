@@ -1,3 +1,10 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# ---------------------------------------------------------------------------
+# Author:   Lorenzo Furcas (TopFirmino) 
+# License:  MIT – see the LICENSE file in the repository root for details.
+# ---------------------------------------------------------------------------
+
 import pluggy
 from tzen.tz_types import TZSessionInfo
 

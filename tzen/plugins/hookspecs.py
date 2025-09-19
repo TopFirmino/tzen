@@ -20,5 +20,5 @@ def build_session_report(session:TZSessionInfo, config:Mapping[str, Any], logger
     """
 
 @hookspec
-def build_docs(tests_root: str, output_dir: str, organizer, config, logger):
-    """Genera documentazione a partire dai test caricati."""
+def build_docs(organizer, config:Mapping[str, Any], logger, output_folder: Path):
+    """ Used in order to generate the test documentation. It will be executed once loaded the testcases and the organizer has been created."""

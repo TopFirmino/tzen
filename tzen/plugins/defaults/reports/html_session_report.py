@@ -127,7 +127,7 @@ HTML_TEMPLATE = """<!doctype html>
           <td>{{ (t.end - t.start) | dhms }}</td>
           <td>
             {% if t.error %}
-              <code style="color:red">{{ t.error }}</code>
+              <code style="color:#ff6b7a">{{ t.error }}</code>
               {% if t.error_details %}
                 <pre style="color:red">{{ t.error_details }}</pre>
               {% endif %}

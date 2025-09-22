@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import pluggy
-from typing import Mapping, Any, Optional
+from typing import Mapping, Any
 from pathlib import Path
 import re, textwrap
 from jinja2 import Environment, DictLoader, select_autoescape
@@ -73,19 +73,18 @@ def build_docs(organizer, config:Mapping[str, Any], logger, output_folder: Path 
     # Generate all the test case pages
     for test in organizer.iterate():
         doc = getattr(test, "doc", "") or ""
-        inv_matrix[test.name] = find_reference_in_text(doc, set(requirements.keys()))
-        doc = replace_text_with_reference(doc, {req:requirements[req]["rel_path"] for req in inv_matrix[test.name]} )
+        inv_matrix[test.name] = _set_reqs_in_docs(doc, requirements)
         try:
-            meta = parse_atdoc_simple(doc) 
+            meta = doc
         except Exception as e:
             logger.warning(f"[DOCS] Error parsing doc for test '{test.name}': {e}")
             meta = {"description": doc}
         
-        title = test.name.capitalize()
+        title = test.name
         template = env.get_template("docs/tests/test.md.j2")
         
         with open(docs / "tests" / f"{title}.md", "w", encoding="utf-8") as f:
-            f.write(template.render({"title": title, "content": meta, "steps": [(i, step.__doc__) for i, step in enumerate(test.steps)]}))
+            f.write(template.render({"title": title, "content": meta, "steps": [(i, step.doc["description"]) for i, step in enumerate(test.steps)]}))
     
 
     # From inverse traceability matrix create the forward one
@@ -94,7 +93,7 @@ def build_docs(organizer, config:Mapping[str, Any], logger, output_folder: Path 
         for req_id in v:
             if req_id not in forward_matrix:
                 forward_matrix[req_id] = []
-            forward_matrix[req_id].append({"title": k.capitalize(), "rel_path": Path("../tests") / f"{k.capitalize()}"})
+            forward_matrix[req_id].append({"title": k, "rel_path": Path("../tests") / f"{k.capitalize()}"})
     
     forward_matrix = collections.OrderedDict(sorted(forward_matrix.items())) 
     inv_matrix = collections.OrderedDict(sorted(inv_matrix.items()))
@@ -115,7 +114,7 @@ def build_docs(organizer, config:Mapping[str, Any], logger, output_folder: Path 
     # Generates the project files
     template = env.get_template("mkdocs.yml.j2")
     requirements_nav = [{"title": req["Id"], "path": f"requirements/{req['Id']}.md"} for req in requirements.values()]
-    tests_nav = [{"title": test.name.capitalize(), "path": f"tests/{test.name.capitalize()}.md"} for test in organizer.iterate()]
+    tests_nav = [{"title": test.name, "path": f"tests/{test.name}.md"} for test in organizer.iterate()]
     with open(root / "mkdocs.yml", "w", encoding="utf-8") as f:
         f.write(template.render(
             site_name = config.get("site_name", "TZen Documentation"),
@@ -288,96 +287,18 @@ TEMPLATES: Dict[str, str] = {
 HEADER_RE = re.compile(r'^(?:[ \t]*)@([^:\n]+):[ \t]*(.*)$')  # @key: first-line (indent tollerata)
 FENCE_OPEN_RE = re.compile(r'^[ \t]*(```+|~~~+)\S*.*$')       # ```lang   oppure  ~~~lang
 
-# Check if a line closes a fence block that was opened with 3*'token'
-def _is_fence_close(line: str, token: str) -> bool:
-    ch = token[0]  # '`' or '~'
-    return bool(re.match(r'^[ \t]*' + re.escape(ch) + r'{3,}[ \t]*$', line))
+def _set_reqs_in_docs(doc: Mapping[str, str], reqs) -> Mapping[str, str]:
 
-def _process_whole_as_default(text: str, *, default_key: str) -> Dict[str, str]:
-    """
-    Elabora tutto il testo come un unico valore:
-    - mantiene i fence
-    - applica l'escape '@@' -> '@' solo FUORI dai fence
-    """
-    lines = text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
-    buf: list[str] = []
-    in_fence: Optional[str] = None
-
-    for line in lines:
-        if in_fence:
-            buf.append(line)
-            if _is_fence_close(line, in_fence):
-                in_fence = None
-            continue
-
-        m_fopen = FENCE_OPEN_RE.match(line)
-        if m_fopen:
-            buf.append(line)
-            in_fence = '```' if '```' in m_fopen.group(1) else '~~~'
-            continue
-
-        buf.append(line[1:] if line.startswith('@@') else line)
-
-    return {default_key: '\n'.join(buf).rstrip('\n')}
-
-def parse_atdoc_simple(text: str, *, allow_indent: bool = True, default_key: str = "description") -> Mapping[str, str]:
-    """ Main parser for simple @key: value blocks with support for fenced code blocks.
-        Lines starting with @@ are unescaped to @.
-    """
+    foundings = set()
+    for k, v in doc.items():
+        found = find_reference_in_text(v, reqs)
+        if found:
+            doc[k] = replace_text_with_reference(v, {r: reqs[r]["rel_path"] for r in found})
+        for f in found:
+            foundings.add(f)
+        
+    return list(foundings)
     
-    # Special case where no keys are specified
-    if not re.search(r'(?m)^[ \t]*@[^:\n]+:', text):
-        return _process_whole_as_default(text, default_key=default_key)
-    
-    
-    lines = text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
-    out: Mapping[str, str] = {}
-    cur_key: Optional[str] = None
-    buf: list[str] = []
-    in_fence: Optional[str] = None  # '```' o '~~~'
-
-    def flush():
-        nonlocal cur_key, buf
-        if cur_key is not None:
-            out[cur_key] = '\n'.join(buf).rstrip('\n')
-            cur_key, buf = None, []
-
-    for line in lines:
-        if in_fence:
-            buf.append(line)
-            if _is_fence_close(line, in_fence):
-                in_fence = None
-            continue
-
-        # apertura fence?
-        m_fopen = FENCE_OPEN_RE.match(line)
-        if m_fopen:
-            if cur_key is None:
-                raise ValueError("Blocco fence prima di qualsiasi '@key:'")
-            buf.append(line)
-            in_fence = '```' if '```' in m_fopen.group(1) else '~~~'
-            continue
-
-        # header @key:
-        m = HEADER_RE.match(line) if allow_indent else re.match(r'^@([^:\n]+):[ \t]*(.*)$', line)
-        if m:
-            # chiudi sezione precedente
-            flush()
-            cur_key = m.group(1).strip()
-            first = m.group(2)
-            buf = [first] if first else []
-            continue
-
-        # contenuto (con escape @@ -> @)
-        if cur_key is None:
-            if line.strip() == "":
-                continue  # ignora blank prima del primo header
-            raise ValueError("Contenuto trovato prima del primo header '@key:'")
-        buf.append(line[1:] if line.startswith('@@') else line)
-
-    flush()
-    return out
-
 def find_reference_in_text(text: str, references: set[str]) -> list[str]:
     """ Find all references in the text. References are words in the text that match the given set of references. """
     found = set()

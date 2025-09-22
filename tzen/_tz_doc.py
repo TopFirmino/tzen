@@ -64,6 +64,7 @@ def parse_atdoc(text: str, *, allow_indent: bool = True, default_key: str = "des
             cur_key, buf = None, []
 
     for line in lines:
+        line = line.strip()
         if in_fence:
             buf.append(line)
             if _is_fence_close(line, in_fence):
@@ -96,5 +97,6 @@ def parse_atdoc(text: str, *, allow_indent: bool = True, default_key: str = "des
         buf.append(line[1:] if line.startswith('@@') else line)
 
     flush()
+    
     return out
 

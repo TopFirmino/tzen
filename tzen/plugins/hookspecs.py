@@ -9,7 +9,7 @@
 import pluggy
 from pathlib import Path
 from ..tz_types import TZSessionInfo 
-from typing import Mapping, Any
+from typing import Mapping, Any, Optional
 
 hookspec = pluggy.HookspecMarker("tzen")
 
@@ -20,5 +20,5 @@ def build_session_report(session:TZSessionInfo, config:Mapping[str, Any], logger
     """
 
 @hookspec
-def build_docs(organizer, config:Mapping[str, Any], logger, output_folder: Path):
+def build_docs(organizer, config:Mapping[str, Any], logger, output_folder: Path | None, requirements_file: Path | None):
     """ Used in order to generate the test documentation. It will be executed once loaded the testcases and the organizer has been created."""

@@ -77,7 +77,7 @@ class TZFacade:
         # Hook: Session Report
         self.pm.hook.build_session_report(session=session.info, config=conf, logger=logger, output_file=report_output_file)
 
-    def build_documentation(self, tests_folder:str, output_folder:str) -> None:
+    def build_documentation(self, tests_folder:str, output_folder:str, requirements_file:str) -> None:
         """ Generate the documentation for the tests """
         
         # Load all the test modules from the folder
@@ -86,5 +86,5 @@ class TZFacade:
         organizer = TZTestOrganizerTree(root_path = Path(tests_folder).resolve(), tests=tz_get_test_table())
             
         # Hook: Session Report
-        self.pm.hook.build_docs(organizer=organizer, config=conf, logger=logger, output_folder=Path(output_folder).resolve())
+        self.pm.hook.build_docs(organizer=organizer, config=conf, logger=logger, output_folder=Path(output_folder).resolve(), requirements_file=Path(requirements_file).resolve())
         

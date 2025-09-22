@@ -12,7 +12,7 @@ __all__ = []
 __version__ = "0.1.1"
 
 from ._tz_injector import tz_inject
-from .tz_test import tz_add_test
+from .tz_test import tz_add_test, TZStep
 from .tz_fixture import tz_add_fixture, TZFixtureScope, TZFixtureType
 import inspect
 
@@ -21,7 +21,19 @@ def tz_testcase(cls, *args, **kwargs):
     """This method is used to declare a testcase. This decorator can only be used for classes"""
     def decorator(test_class):
         test_class.__init__ = tz_inject(test_class.__init__)
-        tz_add_test(test_class.__name__, test_class, [getattr(test_class, name) for name in dir(test_class) if callable(getattr(test_class, name)) and hasattr(getattr(test_class, name), 'is_step')])
+        
+        # Collect steps
+        _steps = []
+        for i, name in enumerate(dir(test_class)):
+            if isinstance(getattr(getattr(test_class, name), "step", None), TZStep):
+                step = getattr(getattr(test_class, name), "step")
+                if step.index == -1:
+                    step.index = i
+                step.name = name
+                _steps.append(step)
+                
+        tz_add_test(test_class.__name__, test_class, _steps)
+        
         return test_class
     
     # If called directly with a class
@@ -31,17 +43,16 @@ def tz_testcase(cls, *args, **kwargs):
     # If called with parentheses
     return decorator
     
-def tz_step(func, *args, **kwargs):
+def tz_step(*args, index = -1, blocking = True, repeat = 1, **kwargs):
     """This method is used to declare a step. This decorator can only be used for methods of classes decorated with @TZTest.testcase"""
     
     def decorator(func):
         _f = tz_inject(func)
-        _f.is_step = True
-        return _f
+        func.step = TZStep(func.__name__, index, _f, blocking, repeat)
+        return func
     
-    # If called directly with a class
-    if len(args) == 0 and callable(func) and not kwargs:
-        return decorator(func)
+    if len(args) == 1:
+        return decorator(args[0])
     
     return decorator
 

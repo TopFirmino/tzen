@@ -41,7 +41,8 @@ def start_session(
 def build_doc(
     directory: str = typer.Argument(..., help="The directory containing the test cases to document"),
     config_file: str = typer.Option(None, help="Path to the configuration file"),
-    output_folder: str = typer.Option("./docs", help="Folder where documentation will be generated")
+    output_folder: str = typer.Option("./docs", help="Folder where documentation will be generated"),
+    requirements_file: str = typer.Option(None, help="Path to a requirements.txt file to include in the documentation")
 ) -> None:
     """Build documentation for test cases.
     
@@ -61,6 +62,6 @@ def build_doc(
         # Load configuration from the specified file
         facade.load_configuration_from_file(config_file)
     
-    facade.build_documentation(directory, output_folder)
+    facade.build_documentation(directory, output_folder, requirements_file=requirements_file)
 
 

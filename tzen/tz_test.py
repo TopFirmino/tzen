@@ -8,9 +8,8 @@
 
 from __future__ import annotations
 from ._tz_logging import TZTestLogger
+from ._tz_doc import parse_atdoc
 from .tz_types import TZEventType, TZTestInfo, TZTestStatusType
-from dataclasses import dataclass
-from enum import Enum, auto
 from typing import Mapping, List
 import inspect
 from pathlib import Path
@@ -19,14 +18,34 @@ import hashlib
 
 _TZEN_TESTS_:Mapping[str, TZTest] = {}
 
+class TZStep:
+    """This class provides a container for steps. It is used in order to provide abstraction and dependency injection. 
+    step parameter is a callable. It is used to store the step function."""
+    
+    def __init__(self, name:str, index:int, func: callable, blocking:bool=True, repeat:int=1):
+        self.name = name
+        self.index = index
+        self.doc = parse_atdoc(func.__doc__)
+        self.callable = func
+        self.blocking = blocking
+        self.repeat = repeat
+    
+    def run(self, test_instance):
+        """This method is used to run the step."""
+        res = True
+        for _ in range(self.repeat):
+            _res = self.callable(test_instance)
+            res &= _res if _res is not None else True
+        
+        return res
 
 class TZTest:
     """This class provides a container for testcases. It is used in order to provide abstraction and dependency injection. 
     test_class parameter is a Class. It is used to store the testcases and their steps."""
     
-    def __init__(self, name:str, test_class: type, steps = []):
+    def __init__(self, name:str, test_class: type, steps:List[TZStep] = []):
         self.name = name
-        self.doc = test_class.__doc__
+        self.doc = parse_atdoc(test_class.__doc__)
         self.test_class = test_class
         self.test_instance = None
         self.steps = steps
@@ -56,12 +75,10 @@ class TZTest:
         test.logger = TZTestLogger(self.name, len(self.steps))
         self.logger = test.logger
         
-        
         self.logger.info(f"Starting Testcase", show_step_info=False)
         self.info.start = int(time.time())
         self.info.status = TZTestStatusType.RUNNING
         self.notify(TZEventType.TEST_STARTED)
-        
         
         # Execute test steps
         test_res:bool = True 
@@ -72,16 +89,19 @@ class TZTest:
             self.notify(TZEventType.STEP_STARTED)
             step_res:bool = False
             try:
-                _res = step(test)
+                _res = step.run(test)
                 step_res = _res if _res is not None else True
-            
+                
             except Exception as e:
                 self.info.error = str(e)
                 test.logger.error(e)
             
             test_res &= step_res
             self.notify(TZEventType.STEP_TERMINATED)
-        
+            if step.blocking and not step_res:
+                test_res = False
+                break
+                
         self.info.end = int(time.time())
         self.logger.info(f"Testcase terminated: {'[bold green]PASSED[/bold green]' if test_res else '[bold magenta]FAILED[/bold magenta]'}", show_step_info=False)
         self.info.status = TZTestStatusType.PASSED if test_res else TZTestStatusType.FAILED
@@ -114,3 +134,17 @@ def tz_get_test_table(tests: List[str] = []) -> Mapping[str, TZTest]:
         return _TZEN_TESTS_
     
     return {name: _TZEN_TESTS_[name] for name in tests if name in _TZEN_TESTS_}
+
+
+# def tz_add_step(test_name: str, step: callable, index: int, blocking: bool = True, repeat: int = 1) -> None:    
+#     """This function is used to add a step to a test. It is used to register the step function."""
+    
+#     if test_name not in _TZEN_TESTS_:
+#         raise ValueError(f"Test '{test_name}' does not exist.")
+    
+#     step_container = TZStep(step.__name__, index, step, blocking, repeat)
+#     _TZEN_TESTS_[test_name].steps.append(step_container)
+
+# def tz_create_step(name:str, func: callable, index: int, blocking: bool = True, repeat: int = 1) -> TZStep:
+#     """This function is used to create a step container. It is used to create a step object."""
+#     return TZStep(name, index, func, blocking, repeat)

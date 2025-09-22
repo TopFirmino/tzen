@@ -80,9 +80,11 @@ class TZSession:
             self.current_test = test
             self._attach_to_test(test)
             self.info.current_test = test.name
-            self.result = test.run() and self.result
+            _test_result = test.run()
             
-            if self.result:
+            self.result = _test_result and self.result
+            
+            if  _test_result:
                 self.info.passed_tests += 1
             else:
                 self.info.failed_tests += 1

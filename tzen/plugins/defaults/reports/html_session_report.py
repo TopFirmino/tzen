@@ -69,7 +69,7 @@ HTML_TEMPLATE = """<!doctype html>
 <body>
 
   <header>
-    <h1>{{ report_title or "TZen test report" }}</h1>
+    <h1>{{ report_title or "TZen Test Report" }}</h1>
     <p class="muted">
       Start time: <strong>{{ start_time | ts_iso}}</strong> &middot;
       End time: <strong>{{ end_time | ts_iso }}</strong>
@@ -127,12 +127,12 @@ HTML_TEMPLATE = """<!doctype html>
           <td>{{ (t.end - t.start) | dhms }}</td>
           <td>
             {% if t.error %}
-              <code>{{ t.error }}</code>
+              <code style="color:red">{{ t.error }}</code>
               {% if t.error_details %}
-                <pre>{{ t.error_details }}</pre>
+                <pre style="color:red">{{ t.error_details }}</pre>
               {% endif %}
             {% else %}
-              <span class="muted">—</span>
+              <span class="muted">-</span>
             {% endif %}
           </td>
         </tr>

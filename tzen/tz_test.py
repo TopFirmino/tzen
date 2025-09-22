@@ -90,7 +90,7 @@ class TZTest:
             step_res:bool = False
             try:
                 _res = step.run(test)
-                step_res = _res if _res is not None else True
+                step_res = _res 
                 
             except Exception as e:
                 self.info.error = str(e)

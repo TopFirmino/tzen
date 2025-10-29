@@ -43,18 +43,18 @@ def _inject_future_annotations(src: str) -> str:
     return src[:insert_off] + insertion + src[insert_off:]
 
 class FutureAnnInjectingLoader(importlib.machinery.SourceFileLoader):
-    """Compila dal sorgente abilitando 'from __future__ import annotations' senza toccare le linee."""
+    """Ignora i .pyc: compila sempre dal sorgente dopo aver iniettato il future."""
     def get_code(self, fullname):
-        source_path = os.path.abspath(self.get_filename(fullname))  # path assoluto = co_filename stabile
-        source_bytes = self.get_data(source_path)
-        # NON iniettiamo righe: preserviamo i numeri di linea del file su disco
+        source_path = self.get_filename(fullname)
+        source_bytes = self.get_data(source_path)  # legge sempre il .py
+        src = source_bytes.decode('utf-8', errors='replace')
+        injected = _inject_future_annotations(src)
         code = compile(
-            source_bytes,
-            source_path,
-            'exec',
+            injected, source_path, 'exec',
             dont_inherit=True,
-            flags=FUTURE_ANN_FLAG,   # abilita behavior della future
+            flags=FUTURE_ANN_FLAG,
         )
+        # (opzionale) self.set_data(self.path, marshal.dumps(code))  # se vuoi ricreare il .pyc
         return code
 
 class _DelegatingFutureAnnFinder(importlib.abc.MetaPathFinder):

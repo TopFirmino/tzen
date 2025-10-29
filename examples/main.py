@@ -1,7 +1,7 @@
 from tzen.tz_test import TZTest, tz_step
 from tzen.tz_fixture import TZFixture, tz_use_fixture
 from tzen.tz_session import TZSession
-from tzen._tz_test_organizer import TZTestOrganizerList
+from tzen.tz_test_organizer import TZTestOrganizerList
 
 import time
 

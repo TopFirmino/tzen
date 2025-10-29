@@ -7,7 +7,7 @@
 
 from .tz_types import *
 from .tz_test import TZTest
-from ._tz_test_organizer import TZTestOrganizer
+from .tz_test_organizer import TZTestOrganizer
 from ._tz_logging import tz_getLogger
 from .tz_types import TZEventType
 from enum import Enum, auto

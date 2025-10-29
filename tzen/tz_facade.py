@@ -12,7 +12,7 @@ from pathlib import Path
 from .tz_test import *
 from . import tz_conf as conf
 from ._tz_loader import import_all_modules_in_directory
-from ._tz_test_organizer import TZTestOrganizerList, TZTestOrganizerTree
+from .tz_test_organizer import TZTestOrganizerList, TZTestOrganizerTree
 from .tz_session import TZSession
 from ._tz_logging import tz_getLogger
 from ._tz_plugins import get_pm, load_default_plugins, load_user_plugins

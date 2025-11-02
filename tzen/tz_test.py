@@ -10,23 +10,47 @@ from __future__ import annotations
 from ._tz_logging import TZTestLogger
 from ._tz_doc import parse_atdoc
 from .tz_types import TZEventType, TZTestInfo, TZTestStatusType
-from typing import Mapping, List
+from typing import List
 import inspect
 from pathlib import Path
 import time
 import hashlib
+from typing import Callable, Dict, Mapping, Tuple
+import sys
 
-_TZEN_TESTS_:Mapping[str, TZTest] = {}
+from .tz_tree import tz_tree_register_type, TzTree
 
+_TZEN_STEPS_ = {}
+
+def _step_provider(name:str, selector:str):
+    if selector not in _TZEN_STEPS_:
+        raise RuntimeError(f"Step with selector {selector} does not exists")
+    return _TZEN_STEPS_[selector]
+
+def tz_add_step(name:str, index:int, func:Callable[[object], bool | None], blocking:bool=True, repeat:int=1):
+    
+    _step = TZStep(name, func, blocking=blocking, repeat=repeat, index = index )
+
+    if _step.get_selector() in _TZEN_STEPS_:
+        raise RuntimeError(f"Step with selector {_step.get_selector()} already exists")
+    
+    _TZEN_STEPS_[_step.get_selector()] = _step
+    TzTree().add_object(_step.name, _step.get_selector(), 'step')
+
+    return _step
+
+
+@tz_tree_register_type("step", provider=_step_provider)
 class TZStep:
     """This class provides a container for steps. It is used in order to provide abstraction and dependency injection. 
     step parameter is a callable. It is used to store the step function."""
     
-    def __init__(self, name:str, index:int, func: callable, blocking:bool=True, repeat:int=1):
+
+    def __init__(self, name:str, func: Callable[[object], bool | None], blocking:bool=True, repeat:int=1, index:int=-1):
         self.name = name
         self.index = index
-        self.doc = parse_atdoc(func.__doc__)
-        self.callable = func
+        self.doc = " " # parse_atdoc(func.__doc__)
+        self.func = func
         self.blocking = blocking
         self.repeat = repeat
     
@@ -34,18 +58,42 @@ class TZStep:
         """This method is used to run the step."""
         res = True
         for _ in range(self.repeat):
-            _res = self.callable(test_instance)
+            _res = self.func(test_instance)
             res &= _res if _res is not None else True
         
         return res
 
+    def get_selector(self) -> str:
+        return ( Path(sys.modules[self.func.__module__].__file__[:-3]) / self.func.__qualname__.replace('.','/') ).as_posix()
+
+_TZEN_TESTS_ = {}
+
+def tz_add_test(name:str, test_class: type, steps = []):
+    """This function is used to add a test to the test table. It is used to register the test class."""
+    
+    if name in _TZEN_TESTS_:
+        raise ValueError(f"Test '{name}' already exists.")
+
+    _test = TZTest(name, test_class, steps)
+    _TZEN_TESTS_[name] = _test
+    TzTree().add_object(name, _test.get_selector(), 'test')
+
+    return _test
+
+def _test_provider(name:str, selector:str):
+    if name not in _TZEN_TESTS_:
+        raise RuntimeError(f"Test with name {name} does not exists")
+    
+    return _TZEN_TESTS_[name]
+
+@tz_tree_register_type("test", provider=_test_provider)
 class TZTest:
     """This class provides a container for testcases. It is used in order to provide abstraction and dependency injection. 
     test_class parameter is a Class. It is used to store the testcases and their steps."""
     
     def __init__(self, name:str, test_class: type, steps:List[TZStep] = []):
         self.name = name
-        self.doc = parse_atdoc(test_class.__doc__)
+        self.doc = ""#parse_atdoc(test_class.__doc__)
         self.test_class = test_class
         self.test_instance = None
         self.steps = steps
@@ -62,17 +110,20 @@ class TZTest:
             for subscriber in self.subscribers[event]:
                 subscriber(self)
     
-    def get_path(self) -> Path:
+    def get_selector(self) -> str:
         """Returns the absolute path of the test class."""
         module = inspect.getmodule(self.test_class)
-        return Path(module.__spec__.origin).joinpath(self.test_class.__name__) 
+        if module is None:
+            raise RuntimeError(f"Cannot find module of testcase {self.test_class.__name__}")
+        return (Path(module.__file__[:-3]) / self.test_class.__name__).as_posix()
     
     def run(self) -> bool:
         """This method is used to run the testcases. It will create an instance of the test_class and run the steps."""
         
         # Setup the test class and test logger
         test = self.test_class()
-        test.logger = TZTestLogger(self.name, len(self.steps))
+        steps = [x.get_object() for x in TzTree().get_by_name(self.name).get_children_of_kind('step')]
+        test.logger = TZTestLogger(self.name, len(steps))
         self.logger = test.logger
         
         self.logger.info(f"Starting Testcase", show_step_info=False)
@@ -82,7 +133,7 @@ class TZTest:
         
         # Execute test steps
         test_res:bool = True 
-        for i, step in enumerate(self.steps):
+        for i, step in enumerate(steps):
             test.logger.set_test_step(i + 1)
             self.info.current_step = i + 1
             
@@ -109,42 +160,4 @@ class TZTest:
         
         return test_res
 
-def tz_add_test(name:str, test_class: type, steps = []):
-    """This function is used to add a test to the test table. It is used to register the test class."""
-    
-    if name in _TZEN_TESTS_:
-        raise ValueError(f"Test '{name}' already exists.")
 
-    test_container = TZTest(name, test_class, steps)
-    _TZEN_TESTS_[name] = test_container
-    
-    return test_container
-
-def tz_get_test(name:str) -> TZTest:
-    """This function is used to get a test from the test table. It is used to retrieve the test class."""
-    
-    if name not in _TZEN_TESTS_:
-        raise ValueError(f"Test '{name}' does not exist.")
-    
-    return _TZEN_TESTS_[name]
-
-def tz_get_test_table(tests: List[str] = []) -> Mapping[str, TZTest]:
-    """This function is used to get the test table. It will return a mapping of test names to test classes. If tests is specified, it will return only the tests in the list."""
-    if not tests:
-        return _TZEN_TESTS_
-    
-    return {name: _TZEN_TESTS_[name] for name in tests if name in _TZEN_TESTS_}
-
-
-# def tz_add_step(test_name: str, step: callable, index: int, blocking: bool = True, repeat: int = 1) -> None:    
-#     """This function is used to add a step to a test. It is used to register the step function."""
-    
-#     if test_name not in _TZEN_TESTS_:
-#         raise ValueError(f"Test '{test_name}' does not exist.")
-    
-#     step_container = TZStep(step.__name__, index, step, blocking, repeat)
-#     _TZEN_TESTS_[test_name].steps.append(step_container)
-
-# def tz_create_step(name:str, func: callable, index: int, blocking: bool = True, repeat: int = 1) -> TZStep:
-#     """This function is used to create a step container. It is used to create a step object."""
-#     return TZStep(name, index, func, blocking, repeat)

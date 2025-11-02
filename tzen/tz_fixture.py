@@ -8,31 +8,71 @@
 
 
 from __future__ import annotations
-from enum import Enum, auto
-from typing import Mapping
-
-class TZFixtureType(Enum):
-    """Enumeration of fixture types."""
-    FUNCTION = "function"
-    CLASS = "class"
-    GENERATOR = "generator"
+from enum import Enum
+from typing import Dict, Callable, Type
+from .tz_tree import tz_tree_register_type, TzTree
+from pathlib import Path
+import sys
+import inspect
 
 class TZFixtureScope(Enum):
     """Enumeration of fixture scopes."""
     TEST = "test"
     SESSION = "session"
     STEP = "step"  
+
+_TZEN_FIXTURES_ = {}
+
+def tz_add_fixture(name:str, fixture_class:Callable | Type, scope:TZFixtureScope = TZFixtureScope.TEST) -> TZFixtureContainer:
+    """Add a fixture to the specified scope."""
     
+    if name in _TZEN_FIXTURES_:
+        raise RuntimeError(f"Fixture '{name}' already exists")
+    
+    fixture = TZFixtureContainer(name, scope, fixture_class)
+    _TZEN_FIXTURES_[name] = fixture
+    
+    return fixture
+
+def _fixture_provider(name:str, selector:str):
+    if name not in _TZEN_FIXTURES_:
+        raise RuntimeError("Fixture '{name}' does not exists")
+
+    return _TZEN_FIXTURES_[name]
+
+def _fixture_injector(func:Callable, consumer:str) -> Callable:
+
+    sig = inspect.signature(func)
+    for name, param in sig.parameters.items():
+        if param.annotation in _TZEN_FIXTURES_:
+            _fixture_node = TzTree().add_object(param.annotation, (Path(consumer) / param.annotation).as_posix(), kind='fixture')
+            _fixture_node.get_object().fixture_class.__init__ = TzTree().inject(_fixture_node.get_object().fixture_class.__init__, _fixture_node.get_selector())
+
+    def _wrapper(*f_args, **f_kwargs):
+        
+        bound = sig.bind_partial(*f_args, **f_kwargs)
+            
+        for name, param in sig.parameters.items():
+            if name in bound.arguments:
+                continue
+            if param.default is not inspect._empty:
+                continue
+            if param.annotation in _TZEN_FIXTURES_:
+                bound.arguments[name] = _TZEN_FIXTURES_[param.annotation].get_fixture()
+
+        return func(*bound.args, **bound.kwargs)
+
+    return _wrapper
+
+@tz_tree_register_type("fixture", provider=_fixture_provider, injector=_fixture_injector)
 class TZFixtureContainer:
     
-    def __init__(self, name:str, scope:TZFixtureScope, ftype:TZFixtureType, fixture_class:type, on_demand:bool = True):
+    def __init__(self, name:str, scope:TZFixtureScope, fixture_class:Callable | Type):
         self.name = name
         self.scope = scope
         self.fixture_class = fixture_class
         self.fixture_instance = None
         self.is_setup = False
-        self.ftype = ftype
-        self.on_demand = on_demand  
     
     def get_fixture(self):
         """Get the fixture instance."""
@@ -45,70 +85,31 @@ class TZFixtureContainer:
         """Setup the fixture instance."""
         if not self.is_setup:
             
-            if self.ftype == TZFixtureType.CLASS:
+            if inspect.isclass(self.fixture_class):
                 self.fixture_instance = self.fixture_class()
                 self.fixture_instance.setup()
                 
-            elif self.ftype == TZFixtureType.FUNCTION:
+            elif inspect.isfunction(self.fixture_class):
                 # For function fixtures, we can call the fixture directly
                 # assuming it is a callable that returns the fixture instance
                 self.fixture_instance = self.fixture_class()
                 
-            elif self.ftype == TZFixtureType.GENERATOR:   
+            elif inspect.isgeneratorfunction(self.fixture_class):   
                 self.fixture_instance = next(self.fixture_class()) 
                 
             else:
-                raise ValueError(f"Unsupported fixture type: {self.ftype}")
-            
+                raise ValueError(f"Unsupported fixture type")
             
             self.is_setup = True
             
     def teardown(self):
         """Teardown the fixture instance."""
         if self.is_setup:
-            if self.ftype == TZFixtureType.CLASS:
+            if inspect.isclass(self.fixture_class):
                 self.fixture_instance.teardown()
-            elif self.ftype == TZFixtureType.GENERATOR:
+                self.fixture_instance = None
+            elif inspect.isgeneratorfunction(self.fixture_class):  
                 self.fixture_class()
             
-            self.fixture_instance = None    
             self.is_setup = False
 
-
-__TZEN_FIXTURES__:Mapping[str, TZFixtureContainer] = {scope:{} for scope in TZFixtureScope}
-
-def tz_add_fixture(name:str,  fixture_class:type, scope:TZFixtureScope = TZFixtureScope.TEST, ftype:TZFixtureType = TZFixtureType.FUNCTION, on_demand:bool = True) -> None:
-    """Add a fixture to the specified scope."""
-    if scope not in __TZEN_FIXTURES__:
-        raise ValueError(f"Invalid fixture scope: {scope}")
-    
-    if name in __TZEN_FIXTURES__[scope]:
-        raise ValueError(f"Fixture '{name}' already exists in scope '{scope}'")
-    
-    __TZEN_FIXTURES__[scope][name] = TZFixtureContainer(name, scope, ftype, fixture_class, on_demand=on_demand)
-
-def tz_get_fixture_by_name(name: str):
-    """Get a fixture by its name."""
-    if name in __TZEN_FIXTURES__[TZFixtureScope.TEST]:
-        return __TZEN_FIXTURES__[TZFixtureScope.TEST][name].get_fixture()
-    elif name in __TZEN_FIXTURES__[TZFixtureScope.SESSION]:
-        return __TZEN_FIXTURES__[TZFixtureScope.SESSION][name].get_fixture()
-    elif name in __TZEN_FIXTURES__[TZFixtureScope.STEP]:
-        return __TZEN_FIXTURES__[TZFixtureScope.STEP][name].get_fixture()
-    return None    
-
-def tz_teardown_by_scope(scope: TZFixtureScope) -> None:
-        """Teardown all fixtures in the specified scope."""
-        if scope not in __TZEN_FIXTURES__:
-            raise ValueError(f"Invalid fixture scope: {scope}")
-        
-        for fixture in __TZEN_FIXTURES__[scope].values():
-            fixture.teardown()
-    
-def tz_setup_by_scope(scope: TZFixtureScope) -> None:
-    """Setup all fixtures in the specified scope."""
-    if scope not in __TZEN_FIXTURES__:
-        raise ValueError(f"Invalid fixture scope: {scope}")
-    
-    for fixture in __TZEN_FIXTURES__[scope].values():
-        fixture.setup()       

@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# ---------------------------------------------------------------------------
+# Author:   Lorenzo Furcas (TopFirmino)
+# License:  MIT – see the LICENSE file in the repository root for details.
+# ---------------------------------------------------------------------------
 """ This module provides utilities for loading Python modules with future annotations support. The current implemementation of the tzen framework requires the use of string annotations,
 in order to enhance compatibility and user experience, this module injects the `from __future__ import annotations` directive into the source code of Python files before they are compiled.
 This allows the use of string annotations without requiring users to manually add the future import in their code.

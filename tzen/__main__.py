@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# ---------------------------------------------------------------------------
+# Author:   Lorenzo Furcas (TopFirmino)
+# License:  MIT – see the LICENSE file in the repository root for details.
+# ---------------------------------------------------------------------------
 from ._tz_cli import app
 from ._tz_logging import tz_getLogger
 

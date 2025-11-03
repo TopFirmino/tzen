@@ -1,4 +1,9 @@
-# tzen/_tz_plugins.py
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# ---------------------------------------------------------------------------
+# Author:   Lorenzo Furcas (TopFirmino)
+# License:  MIT – see the LICENSE file in the repository root for details.
+# ---------------------------------------------------------------------------
 from __future__ import annotations
 import pluggy
 import tzen

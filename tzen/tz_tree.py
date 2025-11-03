@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# ---------------------------------------------------------------------------
+# Author:   Lorenzo Furcas (TopFirmino)
+# License:  MIT – see the LICENSE file in the repository root for details.
+# ---------------------------------------------------------------------------
 """This module implements the tree structure of a teen project. 
 The tree is composed by TzTreeNode objects and uses the path of the object in order to identify dependencies. 
 It is possible to register different kind of nodes via tz_tree_register_type decorator providing a factory and a provider for the registered type.

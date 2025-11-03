@@ -15,19 +15,13 @@ from ._tz_loader import import_all_modules_in_directory
 from .tz_tree import TzTree 
 from .tz_session import TZSession
 from ._tz_logging import tz_getLogger
-from ._tz_plugins import get_pm, load_default_plugins, load_user_plugins
+from .tz_plugins import get_pm
 from .tz_doc import tz_build_documentation
 
 logger = tz_getLogger(__name__)
 
 class TZFacade:
-    
-    def __init__(self):
-        self.pm = get_pm()
-        # Load plugins once per interface instance
-        load_default_plugins()
-        #load_user_plugins(["tzen.plugins.reports.html_session_report"], use_entrypoints=False)
-        
+
     def load_configuration_from_file(self, config_file:str) -> None:
         """ Load the configuration from a file. Supported files are .json, .yaml, .yml, .toml """
         

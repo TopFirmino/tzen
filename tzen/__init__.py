@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+__name__ = "TZen"
 __all__ = []
 __version__ = "0.2.0"
 

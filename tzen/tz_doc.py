@@ -7,16 +7,64 @@
 
 from __future__ import annotations
 import re
-from typing import Mapping, Optional, Dict, List, Callable
+from typing import Mapping, Optional, Dict, List
 from .tz_tree import TzTreeNode
 from ._tz_logging import tz_getLogger
 from .tz_types import TZDocRecord
 from jinja2 import Template
 from .tz_tree import TzTree, tz_tree_register_type
 from pathlib import Path
-
+from .tz_plugins import hookimpl, hookspec, get_pm
 
 logger = tz_getLogger(__name__)
+
+
+class TZDocPlugin:
+    @hookspec
+    def tz_register_doc_backends(self) -> Dict[str, TZDocBackend]:
+        """
+        Return a dictionary that maps the backend name with its class
+        """
+
+class _Builtins:
+    @hookimpl
+    def tz_register_doc_backends(self):
+        return {"default": DefaultMarkdownBackend}
+
+get_pm().register(_Builtins(), "tzen.doc.builtins")
+
+# Load optional third-party entry points (if any)
+# Packages can expose: [project.entry-points."tzen_doc_backends"]
+try:
+    get_pm().load_setuptools_entrypoints("tzen_doc_backends")
+except Exception:
+    # Stay silent: plugin loading is best-effort
+    pass
+
+def _get_doc_backends() -> Dict[str, TZDocBackend]:
+    """Collect all registered backends into one dict."""
+    backends: Dict[str, TZDocBackend] = {}
+    pm = get_pm()
+    for mapping in pm.hook.tz_register_doc_backends():
+        if mapping:
+            # last one wins on same key — simple and predictable
+            backends.update(mapping)
+    return backends
+
+def register_doc_backend(name: str, backend_cls: TZDocBackend) -> None:
+    """
+    Ad-hoc runtime registration (no packaging needed).
+    Example:
+        register_doc_backend("default", MyMarkdownBackend)
+    """
+    class _AdHoc:
+        @hookimpl
+        def tzen_register_doc_backends(self):
+            return {name: backend_cls}
+    get_pm().register(_AdHoc(), f"adhoc:{name}")
+
+
+
 
 _TZEN_REQUIREMENTS_ = {}
 
@@ -350,14 +398,19 @@ class DefaultMarkdownBackend(TZDocBackend):
         # Keep the exported file string up to date
         self._file = self._compose()
 
-def tz_build_documentation(tree: TzTreeNode, name:str, path:str):
+def tz_build_documentation(tree: TzTreeNode, name:str, path:str, backend:str = "default"):
 
-    backend = DefaultMarkdownBackend(name, path)
+    backends = _get_doc_backends()
+    if backend not in backends:
+        raise ValueError(f"Unknown backend {backend}. Available backends {backends}")
+    
+    backend_cls = backends[backend]
+    instance = backend_cls(name, path)
 
     def _visit(_node:TzTreeNode):
-        backend.on_record( tz_doc_extract(_node) )
+        instance.on_record( tz_doc_extract(_node) )
     
     tree.visit(_visit)
 
-    backend.write()
+    instance.write()
 

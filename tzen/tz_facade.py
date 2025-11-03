@@ -12,7 +12,7 @@ from pathlib import Path
 from .tz_test import *
 from . import tz_constants as conf
 from ._tz_loader import import_all_modules_in_directory
-from .tz_test_organizer import TZTestOrganizerList, TZTestOrganizerTree
+from .tz_tree import TzTree 
 from .tz_session import TZSession
 from ._tz_logging import tz_getLogger
 from ._tz_plugins import get_pm, load_default_plugins, load_user_plugins
@@ -57,25 +57,25 @@ class TZFacade:
         for k, v in config.items():
             setattr(conf, k, v)
                     
-    def start_session(self, tests_folder:str, tests:List[str] = [], report_output_file: Path = "./report.html", **kwargs) -> None:
+    def start_session(self, tests_folder:str, selector:str = '/', report_output_file: str = "./report.html", **kwargs) -> None:
         """ Start a session and load all the tests from a folder """
-        
-        # Load all the test modules from the folder
-        import_all_modules_in_directory(tests_folder)
-        
-        # Create the correct test organizer based on the tests list
-        if tests and isinstance(tests, list) and len(tests) > 0:
-            # If tests is a list of test names, use the list organizer
-            organizer = TZTestOrganizerList(tests=tz_get_test_table(tests))
-        else:
-            organizer = TZTestOrganizerTree(root_path = Path(tests_folder).resolve(), tests=tz_get_test_table(tests))
+        project_path = Path(tests_folder).absolute()
 
+        # Load all the test modules from the folder
+        # This triggers the filling of the TZTree
+        import_all_modules_in_directory(project_path.as_posix())
+        
+        # Filter the tree by the selector
+        organizer = TzTree().resolve( (project_path / selector).as_posix() )
+        if organizer is None:
+            raise ValueError(f"Cannot find selector {(project_path / selector).as_posix()}")
+        
         # Create the session
         session = TZSession(organizer)
         session.start()
         
         # Hook: Session Report
-        self.pm.hook.build_session_report(session=session.info, config=conf, logger=logger, output_file=report_output_file)
+        self.pm.hook.build_session_report(session=session.info, config=conf, logger=logger, output_file=Path(report_output_file))
 
     def build_documentation(self, tests_folder:str, output_folder:str, requirements_file:str) -> None:
         """ Generate the documentation for the tests """

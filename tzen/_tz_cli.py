@@ -15,18 +15,18 @@ app = typer.Typer()
 @app.command()
 def start_session(
     directory: str,
-    testcases: List[str] = [],
+    selector: str = "/",
     config_file: str = None
 ) -> None:
     """Start a test session.
     Args:
         directory (str): The directory containing the test cases.
-        testcases (List[str]): List of test case names to execute.
+        selector (str): Selector for testcases.
         config_file (str): Path to the configuration file (optional).
     """
 
     logger.debug(f"Starting session in directory: {directory}")
-    logger.debug(f"Test cases to execute: {', '.join(testcases)}")
+    logger.debug(f"Test cases to execute: {selector}")
     logger.debug(f"Using configuration file: {config_file}")
 
     facade = TZFacade()
@@ -35,7 +35,7 @@ def start_session(
         # Load configuration from the specified file
         facade.load_configuration_from_file(config_file)
     
-    facade.start_session(directory, testcases)
+    facade.start_session(directory, selector)
 
 @app.command()
 def build_doc(

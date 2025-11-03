@@ -7,24 +7,22 @@
 
 from .tz_types import *
 from .tz_test import TZTest
-from .tz_test_organizer import TZTestOrganizer
 from ._tz_logging import tz_getLogger
 from .tz_types import TZEventType
-from enum import Enum, auto
 import time
-
+from .tz_tree import TzTreeNode
+from .tz_fixture import TZFixtureScope
 
 logger = tz_getLogger("")
-
-
 
 
 class TZSession:
     """ Class to manage a test session. It allows to run tests and notify observers about test events."""
     
-    def __init__(self, test_organizer:TZTestOrganizer) -> None:
+    def __init__(self, test_organizer:TzTreeNode) -> None:
         super().__init__()
-        self.info = TZSessionInfo(name="Test Session", total_tests=test_organizer.size(), details={test.name: None for test in test_organizer.iterate() })
+        self.tests = [x.get_object() for x in test_organizer.find("test")]
+        self.info = TZSessionInfo(name="Test Session", total_tests=len(self.tests), details={test.name: None for test in self.tests })
         self.subscribers = {event:[] for event in TZEventType.__members__.values()}
         self.current_test:TZTest = None
         self.result: bool = True
@@ -38,14 +36,25 @@ class TZSession:
         self.notify(TZEventType.TEST_STARTED)
     
     def _on_test_terminated(self, test:TZTest):
+        # Teardown all test fixtures
+        for fix in [x.get_object() for x in self.test_organizer.resolve(test.get_selector()).find("fixture")]:
+            if fix.scope in [TZFixtureScope.TEST, TZFixtureScope.STEP]:
+                fix.teardown()
+
         self.info.details[test.name] = test.info
         self.notify(TZEventType.TEST_TERMINATED)
-    
+
+
     def _on_step_started(self, test:TZTest):
         self.info.details[test.name] = test.info
         self.notify(TZEventType.STEP_STARTED)
     
     def _on_step_terminated(self, test:TZTest):
+        # Teardown all step fixtures
+        for fix in [x.get_object() for x in self.test_organizer.resolve(test.current_step.get_selector()).find("fixture")]:
+            if fix.scope in [TZFixtureScope.TEST, TZFixtureScope.STEP]:
+                fix.teardown()
+
         self.info.details[test.name] = test.info
         self.notify(TZEventType.STEP_TERMINATED)
         
@@ -75,7 +84,7 @@ class TZSession:
         self.notify(TZEventType.SESSION_STARTED)
         self.info.start = int(time.time())
         
-        for test in self.test_organizer.iterate():
+        for test in self.tests:
 
             self.current_test = test
             self._attach_to_test(test)
@@ -93,3 +102,7 @@ class TZSession:
         self.notify(TZEventType.SESSION_TERMINATED)
         self.info.end = int(time.time())
         
+        # Teardown all fixtures.
+        # FIXME Filter by unique names
+        for x in self.test_organizer.find("fixture"):        
+            x.get_object().teardown()

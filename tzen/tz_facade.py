@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 
 from .tz_test import *
-from . import tz_conf as conf
+from . import tz_constants as conf
 from ._tz_loader import import_all_modules_in_directory
 from .tz_test_organizer import TZTestOrganizerList, TZTestOrganizerTree
 from .tz_session import TZSession

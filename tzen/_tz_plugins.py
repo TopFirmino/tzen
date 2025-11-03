@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib
 import pluggy
 from .plugins import hookspecs
-from . import tz_conf
+from . import tz_constants
 import os
 
 _PM = pluggy.PluginManager("tzen")

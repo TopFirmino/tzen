@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 from enum import Enum, auto
-from typing import Mapping
+from typing import Dict    
 from dataclasses import dataclass  
 
 class TZTestStatusType(Enum):
@@ -58,5 +58,5 @@ class TZSessionInfo:
     start:int = 0
     end:int = 0
     status:TZSessionStatusType = TZSessionStatusType.IDLE
-    details: Mapping[str, TZTestInfo] = None
+    details: Dict[str, TZTestInfo | None] = None
     

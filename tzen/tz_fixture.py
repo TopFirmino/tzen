@@ -14,6 +14,7 @@ from .tz_tree import tz_tree_register_type, TzTree
 from pathlib import Path
 import sys
 import inspect
+import functools
 
 class TZFixtureScope(Enum):
     """Enumeration of fixture scopes."""
@@ -42,12 +43,15 @@ def _fixture_provider(name:str, selector:str):
 
 def _fixture_injector(func:Callable, consumer:str) -> Callable:
 
-    sig = inspect.signature(func)
+    base = inspect.unwrap(func)
+
+    sig = inspect.signature(base)
     for name, param in sig.parameters.items():
         if param.annotation in _TZEN_FIXTURES_:
             _fixture_node = TzTree().add_object(param.annotation, (Path(consumer) / param.annotation).as_posix(), kind='fixture')
             _fixture_node.get_object().fixture_class.__init__ = TzTree().inject(_fixture_node.get_object().fixture_class.__init__, _fixture_node.get_selector())
 
+    @functools.wraps(func)
     def _wrapper(*f_args, **f_kwargs):
         
         bound = sig.bind_partial(*f_args, **f_kwargs)

@@ -59,14 +59,14 @@ class TzTreeNode:
 
         while len(queue) > 0:
 
-            _node = queue.pop(0)
+            _node = queue.pop(-1)
 
             if predicate(_node):
                 results.append(_node)
                 if just_one:
                     break
 
-            for c in _node.children:
+            for c in _node.children[::-1]:
                 queue.append(c)
             
         return results
@@ -163,28 +163,6 @@ class TzTreeContainerNode:
         self.name = name
         self.selector = selector
 
-
-_TZEN_MODULES_ = {}
-
-def _module_provider(name:str, selector:str):
-    if name not in _TZEN_MODULES_:
-        raise RuntimeError("Cannot find module with name: {name}")
-    
-    return _TZEN_MODULES_[name]
-
-def tz_tree_add_module(name:str, module:object):
-    if name not in _TZEN_MODULES_:
-        _TZEN_MODULES_[name] = TzTreeModuleNode(module)
-
-
-@tz_tree_register_type("module", provider=_module_provider)
-class TzTreeModuleNode:
-
-    __slots__ = ("module")
-
-    def __init__(self, module) -> None:
-        self.module = module
-
 class TzSimpleSingletonMeta(type):
     _instances = {}
 
@@ -200,9 +178,7 @@ class TzTree(TzTreeNode, metaclass=TzSimpleSingletonMeta):
         super().__init__("/", 'container')
 
     def inject(self, func, consumer):
-
-        sig = inspect.signature(func)
-        
+       
         if not self.resolve(consumer):
             raise RuntimeError("Cannot find a valid consumer with selector {consumer}")
         

@@ -9,15 +9,11 @@
 from __future__ import annotations
 
 __all__ = []
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
-from ._tz_dep_injector import tz_inject
-from .tz_test import tz_add_test, TZStep, tz_add_step
-from .tz_fixture import tz_add_fixture, TZFixtureScope, TZFixtureType
+from .tz_test import tz_add_test, tz_add_step
+from .tz_fixture import tz_add_fixture, TZFixtureScope
 from .tz_tree import TzTree
-
-import inspect
-
 
 def tz_testcase(cls, *args, **kwargs):
     """This method is used to declare a testcase. This decorator can only be used for classes"""
@@ -38,8 +34,7 @@ def tz_step(*args, index = -1, blocking = True, repeat = 1, **kwargs):
     
     def decorator(func):
         step = tz_add_step(func.__name__, index, func, blocking, repeat)
-        step.func = TzTree().inject(func, step.get_selector())
-        return step.func
+        return func
     
     if len(args) == 1:
         return decorator(args[0])
@@ -50,19 +45,11 @@ def tz_fixture(*args, scope:TZFixtureScope=TZFixtureScope.TEST):
     """This method is used to declare a fixture. This decorator can be used on functions of classes that implements the setup and teardown methods."""
 
     def decorator(func):
-        
-        if inspect.isclass(func):
-            #func.__init__ = tz_inject(func.__init__)
-            fix = tz_add_fixture(func.__name__, func, scope)
-        else:
-            #func = tz_inject(func)
-            tz_add_fixture(func.__name__, func, scope)
-
+        tz_add_fixture(func.__name__, func, scope)
         return func
 
     if len(args) == 1:
         return decorator(args[0])
-    
     
     return decorator
 

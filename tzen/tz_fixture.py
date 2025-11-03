@@ -77,7 +77,8 @@ class TZFixtureContainer:
         self.fixture_class = fixture_class
         self.fixture_instance = None
         self.is_setup = False
-    
+        self.doc = fixture_class.__doc__ if fixture_class.__doc__ else ""
+
     def get_fixture(self):
         """Get the fixture instance."""
         if not self.is_setup:

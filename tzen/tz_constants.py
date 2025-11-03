@@ -19,6 +19,7 @@ def tz_add_constant(name:str, value:Any):
         raise RuntimeError(f"Constant '{name}' already exists")
     
     _TZEN_CONSTANTS_[name] = TZConstant(name, value)
+    return _TZEN_CONSTANTS_[name]
 
 def _tz_constant_provider(name:str, selector:str):
     if name not in _TZEN_CONSTANTS_:
@@ -52,9 +53,10 @@ def _tz_constant_injector(func:Callable, consumer:str) -> Callable:
 
 @tz_tree_register_type('constant', provider=_tz_constant_provider, injector=_tz_constant_injector)
 class TZConstant:
-    __slots__ = ('name', 'value')
+    __slots__ = ('name', 'value', 'doc')
 
-    def __init__(self, name:str, value:Any) -> None:
+    def __init__(self, name:str, value:Any, doc:str = '') -> None:
         self.name = name
         self.value = value
+        self.doc = ''
 

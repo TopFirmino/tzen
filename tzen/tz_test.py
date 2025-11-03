@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 from ._tz_logging import TZTestLogger
-from ._tz_doc import parse_atdoc
 from .tz_types import TZEventType, TZTestInfo, TZTestStatusType
 from typing import List
 import inspect
@@ -39,7 +38,6 @@ def tz_add_step(name:str, index:int, func:Callable[[object], bool | None], block
     
     return _step
 
-
 @tz_tree_register_type("step", provider=_step_provider)
 class TZStep:
     """This class provides a container for steps. It is used in order to provide abstraction and dependency injection. 
@@ -49,7 +47,7 @@ class TZStep:
     def __init__(self, name:str, func: Callable[[object], bool | None], blocking:bool=True, repeat:int=1, index:int=-1):
         self.name = name
         self.index = index
-        self.doc = " " # parse_atdoc(func.__doc__)
+        self.doc = func.__doc__ if func.__doc__ else ""
         self.func = func
         self.blocking = blocking
         self.repeat = repeat
@@ -65,7 +63,7 @@ class TZStep:
 
     def get_selector(self) -> str:
         return ( Path(sys.modules[self.func.__module__].__file__[:-3]) / self.func.__qualname__.replace('.','/') ).as_posix()
-
+        
 _TZEN_TESTS_ = {}
 
 def tz_add_test(name:str, test_class: type):
@@ -93,11 +91,13 @@ class TZTest:
     
     def __init__(self, name:str, test_class: type):
         self.name = name
-        self.doc = ""#parse_atdoc(test_class.__doc__)
+        self.doc = test_class.__doc__ if test_class.__doc__ else ""
         self.test_class = test_class
         self.test_instance = None
-        # This only works because step decorator is evaluated before the test decorator
+        
+        # This works only because step decorator is evaluated before the test decorator
         self.steps = [x.get_object() for x in TzTree().get_by_name(self.name).get_children_of_kind('step')]
+
         self.subscribers = {event:[] for event in TZEventType.__members__.values()}
         self.info = TZTestInfo(name=self.name, total_steps=len(self.steps))
         self.uuid = hashlib.sha256(self.name.encode()).hexdigest()
@@ -180,10 +180,11 @@ def tz_add_module(name:str, module:object):
 @tz_tree_register_type("module", provider=_module_provider)
 class TzModule:
 
-    __slots__ = ("module")
+    __slots__ = ("module", "doc")
 
     def __init__(self, module) -> None:
         self.module = module
+        self.doc = module.__doc__ if module.__doc__ else ""
 
     def get_selector(self) -> str:
         return Path(self.module.__file__[:-3]).as_posix()

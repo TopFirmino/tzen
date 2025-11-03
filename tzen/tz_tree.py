@@ -71,6 +71,14 @@ class TzTreeNode:
             
         return results
     
+    def visit(self, callback:Callable[[TzTreeNode], Any]):
+        
+        def _predicate(_node:TzTreeNode) -> bool:
+            callback(_node)
+            return False
+        
+        self._dfs_search(_predicate)
+
     def get_by_name(self, name):
         res = self._dfs_search(lambda node: node.name == name, just_one=True)
         return res[0] if len(res) > 0 else None
@@ -157,11 +165,12 @@ def _container_provider(name:str, selector:str):
 @tz_tree_register_type("container", provider=_container_provider )
 class TzTreeContainerNode:
 
-    __slots__ = ("name", "selector")
+    __slots__ = ("name", "selector", "doc")
 
     def __init__(self, name:str, selector:str) -> None:
         self.name = name
         self.selector = selector
+        self.doc = ""
 
 class TzSimpleSingletonMeta(type):
     _instances = {}

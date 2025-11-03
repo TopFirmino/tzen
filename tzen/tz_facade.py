@@ -16,7 +16,7 @@ from .tz_tree import TzTree
 from .tz_session import TZSession
 from ._tz_logging import tz_getLogger
 from ._tz_plugins import get_pm, load_default_plugins, load_user_plugins
-
+from .tz_doc import tz_build_documentation
 
 logger = tz_getLogger(__name__)
 
@@ -80,11 +80,10 @@ class TZFacade:
     def build_documentation(self, tests_folder:str, output_folder:str, requirements_file:str) -> None:
         """ Generate the documentation for the tests """
         
+        project_path = Path(tests_folder).absolute()
+
         # Load all the test modules from the folder
-        import_all_modules_in_directory(tests_folder)
+        # This triggers the filling of the TZTree
+        import_all_modules_in_directory(project_path.as_posix())
         
-        organizer = TZTestOrganizerTree(root_path = Path(tests_folder).resolve(), tests=tz_get_test_table())
-            
-        # Hook: Session Report
-        self.pm.hook.build_docs(organizer=organizer, config=conf, logger=logger, output_folder=Path(output_folder).resolve(), requirements_file=Path(requirements_file).resolve())
-        
+        tz_build_documentation(TzTree(), "docs", output_folder)

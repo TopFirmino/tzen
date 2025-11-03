@@ -9,7 +9,7 @@
 from __future__ import annotations
 from enum import Enum, auto
 from typing import Dict    
-from dataclasses import dataclass  
+from dataclasses import dataclass, field
 
 class TZTestStatusType(Enum):
     """Enumeration """
@@ -59,4 +59,12 @@ class TZSessionInfo:
     end:int = 0
     status:TZSessionStatusType = TZSessionStatusType.IDLE
     details: Dict[str, TZTestInfo | None] = None
-    
+
+@dataclass
+class TZDocRecord:
+    """Dataclass that represents a Documentation Record"""
+    name:str
+    kind: str
+    selector:str
+    summary:str = ""
+    details:Dict[str, str] = field(default_factory=dict)

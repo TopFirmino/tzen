@@ -57,12 +57,12 @@ class TZFacade:
 
         # Load all the test modules from the folder
         # This triggers the filling of the TZTree
-        import_all_modules_in_directory(project_path.as_posix())
+        import_all_modules_in_directory(str(project_path))
         
         # Filter the tree by the selector
-        organizer = TzTree().resolve( (project_path / selector).as_posix() )
+        organizer = TzTree().resolve( str(project_path / selector) )
         if organizer is None:
-            raise ValueError(f"Cannot find selector {(project_path / selector).as_posix()}")
+            raise ValueError(f"Cannot find selector {str(project_path / selector)}")
         
         # Create the session
         session = TZSession(organizer)
@@ -78,6 +78,6 @@ class TZFacade:
 
         # Load all the test modules from the folder
         # This triggers the filling of the TZTree
-        import_all_modules_in_directory(project_path.as_posix())
+        import_all_modules_in_directory(str(project_path))
         
         tz_build_documentation(TzTree(), "docs", output_folder)

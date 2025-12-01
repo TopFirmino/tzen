@@ -62,7 +62,7 @@ class TZStep:
         return res
 
     def get_selector(self) -> str:
-        return ( Path(sys.modules[self.func.__module__].__file__[:-3]) / self.func.__qualname__.replace('.','/') ).as_posix()
+        return str( Path(sys.modules[self.func.__module__].__file__[:-3]) / self.func.__qualname__.replace('.','/') )
         
 _TZEN_TESTS_ = {}
 
@@ -117,7 +117,7 @@ class TZTest:
         module = inspect.getmodule(self.test_class)
         if module is None:
             raise RuntimeError(f"Cannot find module of testcase {self.test_class.__name__}")
-        return (Path(module.__file__[:-3]) / self.test_class.__name__).as_posix()
+        return str(Path(module.__file__[:-3]) / self.test_class.__name__)
     
     def run(self) -> bool:
         """This method is used to run the testcases. It will create an instance of the test_class and run the steps."""
@@ -187,5 +187,5 @@ class TzModule:
         self.doc = module.__doc__ if module.__doc__ else ""
 
     def get_selector(self) -> str:
-        return Path(self.module.__file__[:-3]).as_posix()
+        return str(Path(self.module.__file__[:-3]))
 

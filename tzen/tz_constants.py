@@ -32,7 +32,7 @@ def _tz_constant_injector(func:Callable, consumer:str) -> Callable:
     sig = inspect.signature(base)
     for name, param in sig.parameters.items():
         if name in _TZEN_CONSTANTS_:
-            _constant_node = TzTree().add_object(name, (Path(consumer) / name).as_posix(), kind='constant')
+            _constant_node = TzTree().add_object(name, str((Path(consumer) / name)), kind='constant')
 
     @functools.wraps(func)
     def _wrapper(*f_args, **f_kwargs):

@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-__name__ = "TZen"
+__name__ = "tzen"
 __all__ = []
 __version__ = "0.2.0"
 
@@ -26,7 +26,7 @@ def tz_testcase(*args, requirements:List[str] = [], **kwargs):
         test.test_class.__init__ = TzTree().inject(test_class.__init__, test.get_selector())
 
         for r in requirements:
-            TzTree().add_object( r, (Path(test.get_selector()) / r).as_posix(), kind='requirement')
+            TzTree().add_object( r, str((Path(test.get_selector()) / r)), kind='requirement')
 
         return test_class
     
@@ -43,7 +43,7 @@ def tz_step(*args, index = -1, blocking = True, repeat = 1, requirements:List[st
     def decorator(func):
         step = tz_add_step(func.__name__, index, func, blocking, repeat)
         for r in requirements:
-            TzTree().add_object( r, (Path(step.get_selector()) / r).as_posix(), kind='requirement')
+            TzTree().add_object( r, str((Path(step.get_selector()) / r)), kind='requirement')
 
         return func
     

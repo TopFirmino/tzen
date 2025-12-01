@@ -48,7 +48,7 @@ def _fixture_injector(func:Callable, consumer:str) -> Callable:
     sig = inspect.signature(base)
     for name, param in sig.parameters.items():
         if param.annotation in _TZEN_FIXTURES_:
-            _fixture_node = TzTree().add_object(param.annotation, (Path(consumer) / param.annotation).as_posix(), kind='fixture')
+            _fixture_node = TzTree().add_object(param.annotation, str(Path(consumer) / param.annotation), kind='fixture')
             _fixture_node.get_object().fixture_class.__init__ = TzTree().inject(_fixture_node.get_object().fixture_class.__init__, _fixture_node.get_selector())
 
     @functools.wraps(func)

@@ -148,7 +148,7 @@ class TzTreeNode:
             parts.append(_node.name)
             _queue.append(_node.parent)
 
-        return os.path.join(*parts[::-1])
+        return str(Path(*parts[::-1]))
 
     def get_object(self, *args, **kwargs):
         return TZ_TREE_TYPES[self.kind].provider(self.name, self.get_selector(), *args, **kwargs)
@@ -190,7 +190,7 @@ class TzSimpleSingletonMeta(type):
 class TzTree(TzTreeNode, metaclass=TzSimpleSingletonMeta):
 
     def __init__(self) -> None:
-        super().__init__("/", 'container')
+        super().__init__(Path().cwd().anchor, 'container')
 
     def inject(self, func, consumer):
        
@@ -245,7 +245,7 @@ class TzTree(TzTreeNode, metaclass=TzSimpleSingletonMeta):
         if not _p.is_absolute():
             raise RuntimeError("selector shall be an absolute path")
 
-        _obj = self.create_containers(_p.as_posix())
+        _obj = self.create_containers(str(_p))
         
         if _obj:
             _obj.kind = kind

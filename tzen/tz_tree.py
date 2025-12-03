@@ -190,7 +190,8 @@ class TzSimpleSingletonMeta(type):
 class TzTree(TzTreeNode, metaclass=TzSimpleSingletonMeta):
 
     def __init__(self) -> None:
-        super().__init__(Path().cwd().anchor, 'container')
+        _anchor = Path().cwd().anchor.upper() if os.name == 'nt' else Path().cwd().anchor
+        super().__init__(_anchor, 'container')
 
     def inject(self, func, consumer):
        

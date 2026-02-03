@@ -68,9 +68,8 @@ class TZFacade:
         session = TZSession(organizer)
         session.start()
         
-        # Hook: Session Report
-        self.pm.hook.build_session_report(session=session.info, config=conf, logger=logger, output_file=Path(report_output_file))
-
+        session.build_report(report_output_file)
+        
     def build_documentation(self, tests_folder:str, output_folder:str, requirements_file:str) -> None:
         """ Generate the documentation for the tests """
         

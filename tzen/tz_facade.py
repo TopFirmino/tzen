@@ -79,4 +79,4 @@ class TZFacade:
         # This triggers the filling of the TZTree
         import_all_modules_in_directory(str(project_path))
         
-        tz_build_documentation(TzTree(), "docs", output_folder)
+        tz_build_documentation(TzTree(), "docs.md", output_folder)

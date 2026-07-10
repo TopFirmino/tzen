@@ -1,0 +1,12 @@
+# Define maximum sizes for strings and arrays to generate static C structs
+
+# Allow up to 32 characters for a test name
+ecsp.CallTest.test_name         max_size:32
+
+# Allow up to 64 characters for log messages and step descriptions
+ecsp.Ack.error_message          max_size:64
+ecsp.Log.message                max_size:64
+ecsp.TestStep.description       max_size:64
+
+# Limit the test list array to 50 tests, with each name up to 32 chars
+ecsp.TestListResponse.test_names max_count:50 max_size:32

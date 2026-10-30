@@ -1,9 +1,9 @@
 # Define maximum sizes for generated nanopb C structs.
 
 # Allow up to 32 characters for a test name.
-ecsp.GetTestResponse.name       max_size:32
+ttp.GetTestResponse.name       max_size:32
 
 # Allow up to 64 characters for log messages, errors, and step descriptions.
-ecsp.Ack.error_message          max_size:64
-ecsp.Log.message                max_size:64
-ecsp.TestStep.description       max_size:64
+ttp.Ack.error_message          max_size:64
+ttp.Log.message                max_size:64
+ttp.TestStep.description       max_size:64

@@ -1,0 +1,122 @@
+syntax = "proto3";
+
+// ============================================================================
+// 1. ENVELOPE MASTER -> SLAVE (Sempre e solo comandi)
+// ============================================================================
+message HostToTarget {
+    uint32 seq_id = 1; // Incrementato dal Master ad ogni richiesta (es. 1, 2, 3...)
+
+    oneof cmd {
+        GetTestsCmd     get_tests     = 2;
+        GetTestInfoCmd  get_test_info = 3;
+        ExecuteTestCmd  execute_test  = 4;
+        AbortTestCmd    abort_test    = 5; // Permette di produrre lo stato ABORTED!
+        SyncReleaseCmd  sync_release  = 6;
+    }
+}
+
+// ============================================================================
+// 2. ENVELOPE SLAVE -> MASTER (Risposte dirette a comandi OPPURE Eventi)
+// ============================================================================
+enum ResultCode {
+    RESULT_OK            = 0; // Equivalente a ACK
+    RESULT_ERR_INDEX     = 1; // Indice test fuori range (0 <= idx < total)
+    RESULT_ERR_BUSY      = 2; // Un test è già in esecuzione
+    RESULT_ERR_NOT_FOUND = 3; // Nessun test o sync_id attivo corrispondente
+    RESULT_ERR_INVALID   = 4; // Comando non valido nello stato attuale
+}
+
+message TargetToHost {
+    // Se > 0: è la risposta diretta al comando con lo stesso seq_id.
+    // Se == 0: è un evento asincrono generato durante l'esecuzione.
+    uint32 seq_id = 1;
+    
+    // Valido quando seq_id > 0 (Sostituisce completamente il messaggio Ack!)
+    ResultCode status = 2;
+
+    oneof payload {
+        // --- Risposte ai comandi (presenti solo se seq_id > 0 e status == RESULT_OK) ---
+        GetTestsResp    tests_count = 3;
+        GetTestInfoResp test_info   = 4;
+
+        // --- Eventi asincroni (presenti quando seq_id == 0) ---
+        TestEvent       test_event  = 5;
+        LogEvent        log         = 6;
+    }
+}
+
+// ============================================================================
+// 3. DETTAGLIO COMANDI E RISPOSTE
+// ============================================================================
+message GetTestsCmd {}
+
+message GetTestsResp {
+    uint32 total_tests = 1;
+}
+
+message GetTestInfoCmd {
+    uint32 index = 1;
+}
+
+message GetTestInfoResp {
+    uint32 index = 1;
+    string name = 2;        // In Nanopb .options: max_size = 32
+    uint32 total_steps = 3; // Opzionale ma utilissimo per barre di progresso lato Host
+}
+
+message ExecuteTestCmd {
+    uint32 index = 1;
+    uint32 run_id = 2;      // ID sessione scelto dal Master per tracciare gli eventi
+}
+
+message AbortTestCmd {
+    uint32 run_id = 1;
+}
+
+message SyncReleaseCmd {
+    uint32 run_id = 1;
+    uint32 sync_id = 2;
+}
+
+// ============================================================================
+// 4. EVENTI DI ESECUZIONE E DIAGNOSTICA (Flusso Asincrono)
+// ============================================================================
+message TestEvent {
+    uint32 run_id = 1;      // Lega ogni step/sync/fine al test specifico!
+    uint32 test_index = 2;
+
+    oneof event {
+        TestStepEvent     step     = 3;
+        SyncWaitEvent     sync     = 4;
+        TestFinishedEvent finished = 5;
+    }
+}
+
+message TestStepEvent {
+    uint32 step_number = 1;
+    bool   success = 2;
+    string description = 3; // In Nanopb .options: max_size = 64 (o usa un ID numerico)
+}
+
+message SyncWaitEvent {
+    uint32 sync_id = 1;     // Lo Slave si ferma finché non riceve SyncRelease(sync_id)
+}
+
+message TestFinishedEvent {
+    enum Status {
+        SUCCESS = 0;
+        FAIL    = 1;
+        ABORTED = 2;
+    }
+    Status status = 1;
+}
+
+message LogEvent {
+    enum Level {
+        INFO    = 0;
+        WARNING = 1;
+        ERROR   = 2;
+    }
+    Level  level = 1;
+    string message = 2;     // In Nanopb .options: max_size = 64
+}

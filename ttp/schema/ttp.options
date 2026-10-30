@@ -1,9 +1,9 @@
-# Define maximum sizes for generated nanopb C structs.
+# Fixed string buffers for the current, package-less ttp.proto schema.
+# max_size includes the terminating NUL; limits below are UTF-8 bytes.
 
-# Allow up to 32 characters for a test name.
-ttp.GetTestResponse.name       max_size:32
+# 32-byte buffer: up to 31 text bytes plus NUL.
+GetTestInfoResp.name          max_size:32
 
-# Allow up to 64 characters for log messages, errors, and step descriptions.
-ttp.Ack.error_message          max_size:64
-ttp.Log.message                max_size:64
-ttp.TestStep.description       max_size:64
+# 64-byte buffers: up to 63 text bytes plus NUL.
+LogEvent.message             max_size:64
+TestStepEvent.description    max_size:64

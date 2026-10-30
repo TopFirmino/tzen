@@ -5,6 +5,25 @@
 #include "pb_decode.h"
 #include "pb_encode.h"
 
+/* CRC-16/CCITT-FALSE: poly=0x1021, init=0xFFFF, refin/refout=false,
+ * xorout=0; check("123456789")=0x29B1. */
+static uint16_t crc16(const uint8_t *data, size_t size)
+{
+    uint16_t crc = 0xFFFFU;
+    size_t i;
+    for (i = 0U; i < size; i++)
+    {
+        unsigned int bit;
+        crc ^= (uint16_t)((uint16_t)data[i] << 8U);
+        for (bit = 0U; bit < 8U; bit++)
+        {
+            crc = (uint16_t)((crc & 0x8000U) != 0U
+                ? (crc << 1U) ^ 0x1021U : (unsigned int)crc << 1U);
+        }
+    }
+    return crc;
+}
+
 static Ttp_Status_t cobs_encode(const uint8_t *input,
                                  size_t input_size,
                                  uint8_t *output,
@@ -110,6 +129,10 @@ static Ttp_Status_t cobs_decode(const uint8_t *input,
                 return TTP_STATUS_BUFFER_TOO_SMALL;
             }
 
+            if (input[read_index] == 0U)
+            {
+                return TTP_STATUS_FRAMING_FAILED;
+            }
             output[write_index] = input[read_index];
             write_index++;
             read_index++;
@@ -130,7 +153,7 @@ static Ttp_Status_t cobs_decode(const uint8_t *input,
     return TTP_STATUS_OK;
 }
 
-Ttp_Status_t Ttp_EncodeMessage(const ttp_HostTargetMessage *message,
+static Ttp_Status_t encode_message(const pb_msgdesc_t *fields, const void *message,
                                  uint8_t *buffer,
                                  size_t buffer_size,
                                  size_t *encoded_size)
@@ -143,7 +166,7 @@ Ttp_Status_t Ttp_EncodeMessage(const ttp_HostTargetMessage *message,
     }
 
     stream = pb_ostream_from_buffer(buffer, buffer_size);
-    if (!pb_encode(&stream, ttp_HostTargetMessage_fields, message))
+    if (!pb_encode(&stream, fields, message))
     {
         *encoded_size = 0U;
         return TTP_STATUS_ENCODE_FAILED;
@@ -153,7 +176,7 @@ Ttp_Status_t Ttp_EncodeMessage(const ttp_HostTargetMessage *message,
     return TTP_STATUS_OK;
 }
 
-Ttp_Status_t Ttp_DecodeMessage(ttp_HostTargetMessage *message,
+static Ttp_Status_t decode_message(const pb_msgdesc_t *fields, void *message,
                                  const uint8_t *buffer,
                                  size_t buffer_size)
 {
@@ -164,9 +187,8 @@ Ttp_Status_t Ttp_DecodeMessage(ttp_HostTargetMessage *message,
         return TTP_STATUS_INVALID_ARGUMENT;
     }
 
-    (void)memset(message, 0, sizeof(*message));
     stream = pb_istream_from_buffer(buffer, buffer_size);
-    if (!pb_decode(&stream, ttp_HostTargetMessage_fields, message))
+    if (!pb_decode(&stream, fields, message))
     {
         return TTP_STATUS_DECODE_FAILED;
     }
@@ -174,12 +196,12 @@ Ttp_Status_t Ttp_DecodeMessage(ttp_HostTargetMessage *message,
     return TTP_STATUS_OK;
 }
 
-Ttp_Status_t Ttp_EncodeFrame(const ttp_HostTargetMessage *message,
+static Ttp_Status_t encode_frame(const pb_msgdesc_t *fields, const void *message,
                                uint8_t *frame,
                                size_t frame_size,
                                size_t *encoded_size)
 {
-    uint8_t payload[TTP_MAX_MESSAGE_SIZE];
+    uint8_t payload[TTP_MAX_FRAME_PAYLOAD_SIZE];
     size_t payload_size = 0U;
     size_t cobs_size = 0U;
     Ttp_Status_t status;
@@ -189,18 +211,24 @@ Ttp_Status_t Ttp_EncodeFrame(const ttp_HostTargetMessage *message,
         return TTP_STATUS_INVALID_ARGUMENT;
     }
 
-    if (frame_size < 3U)
+    *encoded_size = 0U;
+    if (frame_size < (TTP_CRC_SIZE + 3U))
     {
         return TTP_STATUS_BUFFER_TOO_SMALL;
     }
 
-    status = Ttp_EncodeMessage(message, payload, sizeof(payload), &payload_size);
+    status = encode_message(fields, message, payload, TTP_MAX_MESSAGE_SIZE, &payload_size);
     if (status != TTP_STATUS_OK)
     {
         *encoded_size = 0U;
         return status;
     }
 
+    {
+        uint16_t checksum = crc16(payload, payload_size);
+        payload[payload_size++] = (uint8_t)(checksum >> 8U);
+        payload[payload_size++] = (uint8_t)checksum;
+    }
     frame[0] = 0U;
     status = cobs_encode(payload, payload_size, &frame[1], frame_size - 2U, &cobs_size);
     if (status != TTP_STATUS_OK)
@@ -215,11 +243,11 @@ Ttp_Status_t Ttp_EncodeFrame(const ttp_HostTargetMessage *message,
     return TTP_STATUS_OK;
 }
 
-Ttp_Status_t Ttp_DecodeFrame(ttp_HostTargetMessage *message,
+static Ttp_Status_t decode_frame(const pb_msgdesc_t *fields, void *message,
                                const uint8_t *frame,
                                size_t frame_size)
 {
-    uint8_t payload[TTP_MAX_MESSAGE_SIZE];
+    uint8_t payload[TTP_MAX_FRAME_PAYLOAD_SIZE];
     size_t payload_size = 0U;
     Ttp_Status_t status;
 
@@ -234,61 +262,58 @@ Ttp_Status_t Ttp_DecodeFrame(ttp_HostTargetMessage *message,
         return status;
     }
 
-    return Ttp_DecodeMessage(message, payload, payload_size);
-}
-
-ttp_HostTargetMessage Ttp_MakeAck(bool success, const char *error_message)
-{
-    ttp_HostTargetMessage message = ttp_HostTargetMessage_init_zero;
-
-    message.which_payload = ttp_HostTargetMessage_ack_tag;
-    message.payload.ack.success = success;
-    if (error_message != NULL)
+    if (payload_size < TTP_CRC_SIZE)
     {
-        (void)strncpy(message.payload.ack.error_message,
-                     error_message,
-                     sizeof(message.payload.ack.error_message) - 1U);
-        message.payload.ack.error_message[sizeof(message.payload.ack.error_message) - 1U] = '\0';
+        return TTP_STATUS_FRAMING_FAILED;
     }
-
-    return message;
+    payload_size -= TTP_CRC_SIZE;
+    if (crc16(payload, payload_size) !=
+        (uint16_t)(((uint16_t)payload[payload_size] << 8U) | payload[payload_size + 1U]))
+    {
+        return TTP_STATUS_CRC_FAILED;
+    }
+    return decode_message(fields, message, payload, payload_size);
 }
 
-ttp_HostTargetMessage Ttp_MakeGetTests(void)
+
+Ttp_Status_t Ttp_EncodeHostToTarget(const HostToTarget *message,
+    uint8_t *buffer, size_t capacity, size_t *size)
 {
-    ttp_HostTargetMessage message = ttp_HostTargetMessage_init_zero;
-
-    message.which_payload = ttp_HostTargetMessage_get_tests_tag;
-
-    return message;
+    return encode_message(HostToTarget_fields, message, buffer, capacity, size);
+}
+Ttp_Status_t Ttp_DecodeHostToTarget(HostToTarget *message,
+    const uint8_t *buffer, size_t size)
+{
+    return decode_message(HostToTarget_fields, message, buffer, size);
+}
+Ttp_Status_t Ttp_EncodeHostToTargetFrame(const HostToTarget *message,
+    uint8_t *buffer, size_t capacity, size_t *size)
+{
+    return encode_frame(HostToTarget_fields, message, buffer, capacity, size);
+}
+Ttp_Status_t Ttp_DecodeHostToTargetFrame(HostToTarget *message,
+    const uint8_t *buffer, size_t size)
+{
+    return decode_frame(HostToTarget_fields, message, buffer, size);
 }
 
-ttp_HostTargetMessage Ttp_MakeGetTest(uint32_t index)
+Ttp_Status_t Ttp_EncodeTargetToHost(const TargetToHost *message,
+    uint8_t *buffer, size_t capacity, size_t *size)
 {
-    ttp_HostTargetMessage message = ttp_HostTargetMessage_init_zero;
-
-    message.which_payload = ttp_HostTargetMessage_get_test_tag;
-    message.payload.get_test.index = index;
-
-    return message;
+    return encode_message(TargetToHost_fields, message, buffer, capacity, size);
 }
-
-ttp_HostTargetMessage Ttp_MakeExecuteTest(uint32_t index)
+Ttp_Status_t Ttp_DecodeTargetToHost(TargetToHost *message,
+    const uint8_t *buffer, size_t size)
 {
-    ttp_HostTargetMessage message = ttp_HostTargetMessage_init_zero;
-
-    message.which_payload = ttp_HostTargetMessage_execute_test_tag;
-    message.payload.execute_test.index = index;
-
-    return message;
+    return decode_message(TargetToHost_fields, message, buffer, size);
 }
-
-ttp_HostTargetMessage Ttp_MakeSyncRelease(uint32_t sync_id)
+Ttp_Status_t Ttp_EncodeTargetToHostFrame(const TargetToHost *message,
+    uint8_t *buffer, size_t capacity, size_t *size)
 {
-    ttp_HostTargetMessage message = ttp_HostTargetMessage_init_zero;
-
-    message.which_payload = ttp_HostTargetMessage_sync_release_tag;
-    message.payload.sync_release.sync_id = sync_id;
-
-    return message;
+    return encode_frame(TargetToHost_fields, message, buffer, capacity, size);
+}
+Ttp_Status_t Ttp_DecodeTargetToHostFrame(TargetToHost *message,
+    const uint8_t *buffer, size_t size)
+{
+    return decode_frame(TargetToHost_fields, message, buffer, size);
 }

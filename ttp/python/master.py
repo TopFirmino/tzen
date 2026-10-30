@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import os
 import subprocess
 import tempfile
@@ -25,6 +26,9 @@ class TtpProcessMaster:
         self.slave_exe = slave_exe
         self.debug_log = debug_log
         self.debug_shell = debug_shell
+        self._next_seq = 1
+        self._next_run = 1
+        self._events = deque()
         self.process: Optional[subprocess.Popen[bytes]] = None
         self.debug_process: Optional[subprocess.Popen[bytes]] = None
 
@@ -55,47 +59,85 @@ class TtpProcessMaster:
         except subprocess.TimeoutExpired:
             self.process.terminate()
             self.process.wait(timeout=2.0)
+        if self.process.stdout is not None:
+            self.process.stdout.close()
+        self.process = None
+        self._events.clear()
 
-    def request(self, message: ttp.HostTargetMessage) -> ttp.HostTargetMessage:
+    def request(self, message: ttp.HostToTarget) -> ttp.TargetToHost:
+        """One outstanding request; retain intervening events for receive()."""
         self.send(message)
-        return self.receive()
+        while True:
+            response = self._receive_wire()
+            if response.seq_id == 0:
+                self._events.append(response)
+            elif response.seq_id == message.seq_id:
+                return response
+            else:
+                raise RuntimeError(f"unexpected response sequence {response.seq_id}")
 
-    def send(self, message: ttp.HostTargetMessage) -> None:
+    def send(self, message: ttp.HostToTarget) -> None:
         if self.process is None or self.process.stdin is None:
             raise RuntimeError("slave process is not started")
-
+        if not isinstance(message, ttp.HostToTarget):
+            raise TypeError("host can send only HostToTarget")
+        # Allocate all wire sequence IDs here, including for low-level send().
+        message.seq_id = self._next_seq
+        self._next_seq = self._next_seq % 0xFFFFFFFF + 1
         self.process.stdin.write(ttp.encode_frame(message))
         self.process.stdin.flush()
 
-    def receive(self) -> ttp.HostTargetMessage:
-        frame = self._read_frame()
-        return ttp.decode_frame(frame)
+    def _receive_wire(self) -> ttp.TargetToHost:
+        return ttp.decode_frame(self._read_frame(), ttp.TargetToHost)
+
+    def receive(self) -> ttp.TargetToHost:
+        return self._events.popleft() if self._events else self._receive_wire()
+
+    def get_test_info(self, index: int) -> ttp.GetTestInfoResp:
+        response = self.request(ttp.make_get_test_info(index))
+        if response.status != ttp.RESULT_OK or response.WhichOneof("payload") != "test_info":
+            raise RuntimeError(f"test info rejected: {response}")
+        return response.test_info
 
     def get_manifest(self) -> list[str]:
         response = self.request(ttp.make_get_tests())
-        if response.WhichOneof("payload") != "get_tests_response":
+        if response.status != ttp.RESULT_OK or response.WhichOneof("payload") != "tests_count":
             raise RuntimeError(f"unexpected response: {response}")
+        return [self.get_test_info(i).name for i in range(response.tests_count.total_tests)]
 
-        names: list[str] = []
-        for index in range(response.get_tests_response.total_tests):
-            test_response = self.request(ttp.make_get_test(index))
-            if test_response.WhichOneof("payload") != "get_test_response":
-                raise RuntimeError(f"unexpected response for test {index}: {test_response}")
-            names.append(test_response.get_test_response.name)
+    def abort_test(self, run_id: int) -> ttp.TargetToHost:
+        return self.request(ttp.make_abort_test(run_id))
 
-        return names
+    def release_sync(self, run_id: int, sync_id: int) -> ttp.TargetToHost:
+        return self.request(ttp.make_sync_release(run_id, sync_id))
 
-    def execute_test(self, index: int) -> Iterable[ttp.HostTargetMessage]:
-        ack = self.request(ttp.make_execute_test(index))
-        yield ack
-        if ack.WhichOneof("payload") != "ack" or not ack.ack.success:
+    def execute_test(self, index: int, run_id: Optional[int] = None,
+                     auto_release: bool = True) -> Iterable[ttp.TargetToHost]:
+        if run_id is None:
+            run_id = self._next_run
+            self._next_run = self._next_run % 0xFFFFFFFF + 1
+        response = self.request(ttp.make_execute_test(index, run_id))
+        yield response
+        if response.status != ttp.RESULT_OK:
             return
-
         while True:
             event = self.receive()
             yield event
-            if event.WhichOneof("payload") == "test_finished":
+            if event.seq_id != 0:
+                raise RuntimeError(f"unexpected command response during run: {event}")
+            if event.WhichOneof("payload") != "test_event":
+                continue
+            test_event = event.test_event
+            if test_event.run_id != run_id or test_event.test_index != index:
+                raise RuntimeError(f"unexpected execution identity: {event}")
+            kind = test_event.WhichOneof("event")
+            if kind == "finished":
                 return
+            if kind == "sync" and auto_release:
+                release = self.release_sync(run_id, test_event.sync.sync_id)
+                yield release
+                if release.status != ttp.RESULT_OK:
+                    raise RuntimeError(f"sync release rejected: {release}")
 
     def _read_frame(self) -> bytes:
         if self.process is None or self.process.stdout is None:
@@ -103,6 +145,7 @@ class TtpProcessMaster:
 
         frame = bytearray()
         in_frame = False
+        dropping = False
 
         while True:
             chunk = self.process.stdout.read(1)
@@ -111,14 +154,19 @@ class TtpProcessMaster:
 
             value = chunk[0]
             if value == ttp.FRAME_DELIMITER:
-                if in_frame and frame:
+                if in_frame and frame and not dropping:
                     return bytes(frame)
                 in_frame = True
+                dropping = False
                 frame.clear()
                 continue
 
-            if in_frame:
-                frame.append(value)
+            if in_frame and not dropping:
+                if len(frame) >= ttp.MAX_FRAME_SIZE - 2:
+                    dropping = True
+                    frame.clear()
+                else:
+                    frame.append(value)
 
     def _start_debug_shell(self, debug_log: Path) -> None:
         debug_log.parent.mkdir(parents=True, exist_ok=True)
@@ -143,23 +191,10 @@ def build_slave() -> None:
         raise SystemExit(result.returncode)
 
 
-def print_message(message: ttp.HostTargetMessage) -> None:
-    payload = message.WhichOneof("payload")
-    if payload == "ack":
-        print(f"ack success={message.ack.success} error={message.ack.error_message!r}")
-    elif payload == "log":
-        print(f"log level={message.log.level} message={message.log.message!r}")
-    elif payload == "test_step":
-        print(
-            "test_step "
-            f"step={message.test_step.step_number} "
-            f"success={message.test_step.success} "
-            f"description={message.test_step.description!r}"
-        )
-    elif payload == "test_finished":
-        print(f"test_finished status={message.test_finished.status}")
-    else:
-        print(message)
+def print_message(message: ttp.TargetToHost) -> None:
+    if message.seq_id:
+        print(f"response seq={message.seq_id} status={ttp.ResultCode.Name(message.status)}")
+    print(str(message).strip())
 
 
 def main() -> int:

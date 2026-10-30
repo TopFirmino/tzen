@@ -24,39 +24,45 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\tttp.proto\x12\x03ttp\"\xbd\x03\n\x11HostTargetMessage\x12\x17\n\x03\x61\x63k\x18\x01 \x01(\x0b\x32\x08.ttp.AckH\x00\x12\x19\n\x04sync\x18\x02 \x01(\x0b\x32\t.ttp.SyncH\x00\x12(\n\x0csync_release\x18\x03 \x01(\x0b\x32\x10.ttp.SyncReleaseH\x00\x12\"\n\tget_tests\x18\x32 \x01(\x0b\x32\r.ttp.GetTestsH\x00\x12 \n\x08get_test\x18\x33 \x01(\x0b\x32\x0c.ttp.GetTestH\x00\x12(\n\x0c\x65xecute_test\x18\x34 \x01(\x0b\x32\x10.ttp.ExecuteTestH\x00\x12\x33\n\x12get_tests_response\x18\x65 \x01(\x0b\x32\x15.ttp.GetTestsResponseH\x00\x12\x31\n\x11get_test_response\x18\x66 \x01(\x0b\x32\x14.ttp.GetTestResponseH\x00\x12\"\n\ttest_step\x18g \x01(\x0b\x32\r.ttp.TestStepH\x00\x12\x17\n\x03log\x18h \x01(\x0b\x32\x08.ttp.LogH\x00\x12*\n\rtest_finished\x18i \x01(\x0b\x32\x11.ttp.TestFinishedH\x00\x42\t\n\x07payload\"\n\n\x08GetTests\"\x18\n\x07GetTest\x12\r\n\x05index\x18\x01 \x01(\r\"\x1c\n\x0b\x45xecuteTest\x12\r\n\x05index\x18\x01 \x01(\r\"\x1e\n\x0bSyncRelease\x12\x0f\n\x07sync_id\x18\x01 \x01(\r\"\'\n\x10GetTestsResponse\x12\x13\n\x0btotal_tests\x18\x01 \x01(\r\".\n\x0fGetTestResponse\x12\r\n\x05index\x18\x01 \x01(\r\x12\x0c\n\x04name\x18\x02 \x01(\t\"-\n\x03\x41\x63k\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x15\n\rerror_message\x18\x02 \x01(\t\"E\n\x08TestStep\x12\x13\n\x0bstep_number\x18\x01 \x01(\r\x12\x13\n\x0b\x64\x65scription\x18\x02 \x01(\t\x12\x0f\n\x07success\x18\x03 \x01(\x08\"f\n\x03Log\x12 \n\x05level\x18\x01 \x01(\x0e\x32\x11.ttp.Log.LogLevel\x12\x0f\n\x07message\x18\x02 \x01(\t\",\n\x08LogLevel\x12\x08\n\x04INFO\x10\x00\x12\x0b\n\x07WARNING\x10\x01\x12\t\n\x05\x45RROR\x10\x02\"\x17\n\x04Sync\x12\x0f\n\x07sync_id\x18\x01 \x01(\r\"f\n\x0cTestFinished\x12(\n\x06status\x18\x01 \x01(\x0e\x32\x18.ttp.TestFinished.Status\",\n\x06Status\x12\x0b\n\x07SUCCESS\x10\x00\x12\x08\n\x04\x46\x41IL\x10\x01\x12\x0b\n\x07\x41\x42ORTED\x10\x02\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\tttp.proto\"\xe9\x01\n\x0cHostToTarget\x12\x0e\n\x06seq_id\x18\x01 \x01(\r\x12!\n\tget_tests\x18\x02 \x01(\x0b\x32\x0c.GetTestsCmdH\x00\x12(\n\rget_test_info\x18\x03 \x01(\x0b\x32\x0f.GetTestInfoCmdH\x00\x12\'\n\x0c\x65xecute_test\x18\x04 \x01(\x0b\x32\x0f.ExecuteTestCmdH\x00\x12#\n\nabort_test\x18\x05 \x01(\x0b\x32\r.AbortTestCmdH\x00\x12\'\n\x0csync_release\x18\x06 \x01(\x0b\x32\x0f.SyncReleaseCmdH\x00\x42\x05\n\x03\x63md\"\xcf\x01\n\x0cTargetToHost\x12\x0e\n\x06seq_id\x18\x01 \x01(\r\x12\x1b\n\x06status\x18\x02 \x01(\x0e\x32\x0b.ResultCode\x12$\n\x0btests_count\x18\x03 \x01(\x0b\x32\r.GetTestsRespH\x00\x12%\n\ttest_info\x18\x04 \x01(\x0b\x32\x10.GetTestInfoRespH\x00\x12 \n\ntest_event\x18\x05 \x01(\x0b\x32\n.TestEventH\x00\x12\x18\n\x03log\x18\x06 \x01(\x0b\x32\t.LogEventH\x00\x42\t\n\x07payload\"\r\n\x0bGetTestsCmd\"#\n\x0cGetTestsResp\x12\x13\n\x0btotal_tests\x18\x01 \x01(\r\"\x1f\n\x0eGetTestInfoCmd\x12\r\n\x05index\x18\x01 \x01(\r\"C\n\x0fGetTestInfoResp\x12\r\n\x05index\x18\x01 \x01(\r\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x13\n\x0btotal_steps\x18\x03 \x01(\r\"/\n\x0e\x45xecuteTestCmd\x12\r\n\x05index\x18\x01 \x01(\r\x12\x0e\n\x06run_id\x18\x02 \x01(\r\"\x1e\n\x0c\x41\x62ortTestCmd\x12\x0e\n\x06run_id\x18\x01 \x01(\r\"1\n\x0eSyncReleaseCmd\x12\x0e\n\x06run_id\x18\x01 \x01(\r\x12\x0f\n\x07sync_id\x18\x02 \x01(\r\"\xa0\x01\n\tTestEvent\x12\x0e\n\x06run_id\x18\x01 \x01(\r\x12\x12\n\ntest_index\x18\x02 \x01(\r\x12\x1e\n\x04step\x18\x03 \x01(\x0b\x32\x0e.TestStepEventH\x00\x12\x1e\n\x04sync\x18\x04 \x01(\x0b\x32\x0e.SyncWaitEventH\x00\x12&\n\x08\x66inished\x18\x05 \x01(\x0b\x32\x12.TestFinishedEventH\x00\x42\x07\n\x05\x65vent\"J\n\rTestStepEvent\x12\x13\n\x0bstep_number\x18\x01 \x01(\r\x12\x0f\n\x07success\x18\x02 \x01(\x08\x12\x13\n\x0b\x64\x65scription\x18\x03 \x01(\t\" \n\rSyncWaitEvent\x12\x0f\n\x07sync_id\x18\x01 \x01(\r\"l\n\x11TestFinishedEvent\x12)\n\x06status\x18\x01 \x01(\x0e\x32\x19.TestFinishedEvent.Status\",\n\x06Status\x12\x0b\n\x07SUCCESS\x10\x00\x12\x08\n\x04\x46\x41IL\x10\x01\x12\x0b\n\x07\x41\x42ORTED\x10\x02\"f\n\x08LogEvent\x12\x1e\n\x05level\x18\x01 \x01(\x0e\x32\x0f.LogEvent.Level\x12\x0f\n\x07message\x18\x02 \x01(\t\")\n\x05Level\x12\x08\n\x04INFO\x10\x00\x12\x0b\n\x07WARNING\x10\x01\x12\t\n\x05\x45RROR\x10\x02*x\n\nResultCode\x12\r\n\tRESULT_OK\x10\x00\x12\x14\n\x10RESULT_ERR_INDEX\x10\x01\x12\x13\n\x0fRESULT_ERR_BUSY\x10\x02\x12\x18\n\x14RESULT_ERR_NOT_FOUND\x10\x03\x12\x16\n\x12RESULT_ERR_INVALID\x10\x04\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'ttp_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_HOSTTARGETMESSAGE']._serialized_start=19
-  _globals['_HOSTTARGETMESSAGE']._serialized_end=464
-  _globals['_GETTESTS']._serialized_start=466
-  _globals['_GETTESTS']._serialized_end=476
-  _globals['_GETTEST']._serialized_start=478
-  _globals['_GETTEST']._serialized_end=502
-  _globals['_EXECUTETEST']._serialized_start=504
-  _globals['_EXECUTETEST']._serialized_end=532
-  _globals['_SYNCRELEASE']._serialized_start=534
-  _globals['_SYNCRELEASE']._serialized_end=564
-  _globals['_GETTESTSRESPONSE']._serialized_start=566
-  _globals['_GETTESTSRESPONSE']._serialized_end=605
-  _globals['_GETTESTRESPONSE']._serialized_start=607
-  _globals['_GETTESTRESPONSE']._serialized_end=653
-  _globals['_ACK']._serialized_start=655
-  _globals['_ACK']._serialized_end=700
-  _globals['_TESTSTEP']._serialized_start=702
-  _globals['_TESTSTEP']._serialized_end=771
-  _globals['_LOG']._serialized_start=773
-  _globals['_LOG']._serialized_end=875
-  _globals['_LOG_LOGLEVEL']._serialized_start=831
-  _globals['_LOG_LOGLEVEL']._serialized_end=875
-  _globals['_SYNC']._serialized_start=877
-  _globals['_SYNC']._serialized_end=900
-  _globals['_TESTFINISHED']._serialized_start=902
-  _globals['_TESTFINISHED']._serialized_end=1004
-  _globals['_TESTFINISHED_STATUS']._serialized_start=960
-  _globals['_TESTFINISHED_STATUS']._serialized_end=1004
+  _globals['_RESULTCODE']._serialized_start=1232
+  _globals['_RESULTCODE']._serialized_end=1352
+  _globals['_HOSTTOTARGET']._serialized_start=14
+  _globals['_HOSTTOTARGET']._serialized_end=247
+  _globals['_TARGETTOHOST']._serialized_start=250
+  _globals['_TARGETTOHOST']._serialized_end=457
+  _globals['_GETTESTSCMD']._serialized_start=459
+  _globals['_GETTESTSCMD']._serialized_end=472
+  _globals['_GETTESTSRESP']._serialized_start=474
+  _globals['_GETTESTSRESP']._serialized_end=509
+  _globals['_GETTESTINFOCMD']._serialized_start=511
+  _globals['_GETTESTINFOCMD']._serialized_end=542
+  _globals['_GETTESTINFORESP']._serialized_start=544
+  _globals['_GETTESTINFORESP']._serialized_end=611
+  _globals['_EXECUTETESTCMD']._serialized_start=613
+  _globals['_EXECUTETESTCMD']._serialized_end=660
+  _globals['_ABORTTESTCMD']._serialized_start=662
+  _globals['_ABORTTESTCMD']._serialized_end=692
+  _globals['_SYNCRELEASECMD']._serialized_start=694
+  _globals['_SYNCRELEASECMD']._serialized_end=743
+  _globals['_TESTEVENT']._serialized_start=746
+  _globals['_TESTEVENT']._serialized_end=906
+  _globals['_TESTSTEPEVENT']._serialized_start=908
+  _globals['_TESTSTEPEVENT']._serialized_end=982
+  _globals['_SYNCWAITEVENT']._serialized_start=984
+  _globals['_SYNCWAITEVENT']._serialized_end=1016
+  _globals['_TESTFINISHEDEVENT']._serialized_start=1018
+  _globals['_TESTFINISHEDEVENT']._serialized_end=1126
+  _globals['_TESTFINISHEDEVENT_STATUS']._serialized_start=1082
+  _globals['_TESTFINISHEDEVENT_STATUS']._serialized_end=1126
+  _globals['_LOGEVENT']._serialized_start=1128
+  _globals['_LOGEVENT']._serialized_end=1230
+  _globals['_LOGEVENT_LEVEL']._serialized_start=1189
+  _globals['_LOGEVENT_LEVEL']._serialized_end=1230
 # @@protoc_insertion_point(module_scope)

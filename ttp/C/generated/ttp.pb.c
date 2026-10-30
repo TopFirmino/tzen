@@ -6,44 +6,43 @@
 #error Regenerate this file with the current version of nanopb generator.
 #endif
 
-PB_BIND(ttp_HostTargetMessage, ttp_HostTargetMessage, 2)
+PB_BIND(HostToTarget, HostToTarget, AUTO)
 
 
-PB_BIND(ttp_GetTests, ttp_GetTests, AUTO)
+PB_BIND(TargetToHost, TargetToHost, AUTO)
 
 
-PB_BIND(ttp_GetTest, ttp_GetTest, AUTO)
+PB_BIND(GetTestsCmd, GetTestsCmd, AUTO)
 
 
-PB_BIND(ttp_ExecuteTest, ttp_ExecuteTest, AUTO)
+PB_BIND(GetTestsResp, GetTestsResp, AUTO)
 
 
-PB_BIND(ttp_SyncRelease, ttp_SyncRelease, AUTO)
+PB_BIND(GetTestInfoCmd, GetTestInfoCmd, AUTO)
 
 
-PB_BIND(ttp_GetTestsResponse, ttp_GetTestsResponse, AUTO)
+PB_BIND(GetTestInfoResp, GetTestInfoResp, AUTO)
 
 
-PB_BIND(ttp_GetTestResponse, ttp_GetTestResponse, AUTO)
+PB_BIND(ExecuteTestCmd, ExecuteTestCmd, AUTO)
 
 
-PB_BIND(ttp_Ack, ttp_Ack, AUTO)
+PB_BIND(AbortTestCmd, AbortTestCmd, AUTO)
 
 
-PB_BIND(ttp_TestStep, ttp_TestStep, AUTO)
+PB_BIND(SyncReleaseCmd, SyncReleaseCmd, AUTO)
 
 
-PB_BIND(ttp_Log, ttp_Log, AUTO)
+PB_BIND(TestEvent, TestEvent, AUTO)
 
 
-PB_BIND(ttp_Sync, ttp_Sync, AUTO)
+PB_BIND(TestStepEvent, TestStepEvent, AUTO)
 
 
-PB_BIND(ttp_TestFinished, ttp_TestFinished, AUTO)
+PB_BIND(SyncWaitEvent, SyncWaitEvent, AUTO)
 
 
+PB_BIND(TestFinishedEvent, TestFinishedEvent, AUTO)
 
 
-
-
-
+PB_BIND(LogEvent, LogEvent, AUTO)

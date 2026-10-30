@@ -1,197 +1,317 @@
 # TTP (Tzen Test Protocol)
 
-This document describes the current schema, codecs, and local demonstration as of
-2026-10-30. Schema support and application behavior are distinguished below.
+This specification describes the current `schema/ttp.proto` and
+`schema/ttp.options` as of 2026-10-30. It describes the schema contract and the current C/Python local implementation.
 
-## Purpose and implementation
+## Current implementation status
 
-TTP lets a host discover tests on a target, execute a selected test, and receive
-progress and a final result. The current demonstration uses a Python host and a
-C target subprocess communicating over binary stdin/stdout. Target debug output
-goes to stderr or a separate debug file, outside the protocol stream.
+The schema now has two directional envelopes, request sequence IDs, execution run
+IDs, structured result codes, abort commands, and nested execution events.
+There is no protobuf `package` declaration. Nanopb option selectors and generated
+C type names therefore have no `ttp.` / `ttp_` package prefix.
 
-Sources:
+Both language bindings have been regenerated from this schema and its options.
+The C codecs/target and Python wrapper/master now use `HostToTarget` and
+`TargetToHost`, including CRC-protected framing. The C APIs have explicit direction
+names: `Ttp_EncodeHostToTarget`, `Ttp_DecodeHostToTarget`,
+`Ttp_EncodeTargetToHost`, and `Ttp_DecodeTargetToHost`, with corresponding
+`...Frame` APIs for COBS/CRC framing. Callers initialize generated structs and
+select their command/payload/event tags directly; the old ACK constructors are
+removed. Raw APIs serialize protobuf only. Ignore decoder output on any error.
 
-- `schema/ttp.proto`: message definitions and field numbers.
-- `schema/ttp.options`: nanopb string buffer limits.
-- `C/ttp.h`, `C/ttp.c`: C protobuf and COBS codecs and command constructors.
-- `C/slave_main.c`: sample target and command dispatch.
-- `python/ttp.py`: Python codecs and command constructors.
-- `python/master.py`: local host, discovery, and execution event iterator.
-- `C/generated/ttp.pb.*`, `python/generated/ttp_pb2.py`: generated bindings.
+Python re-exports the new schema types and result codes. `encode_message` and
+`encode_frame` accept either envelope; `decode_message` and `decode_frame` default
+to `TargetToHost` and accept `HostToTarget` as an explicit second argument.
+Command helpers are `make_get_tests`, `make_get_test_info`, `make_execute_test`,
+`make_abort_test`, and `make_sync_release`.
 
-The source API, generated bindings, protobuf package, scripts, and executable use
-the TTP name (`Ttp_*`, `TTP_*`, `ttp_*`, `TtpProcessMaster`, `ttp_slave.exe`).
-Field numbers, field types, and framing are unchanged by the rename; ordinary
-serialized messages remain wire compatible. Generated type and import names have
-changed, so source callers must use the new names.
+The sample registry contains two tests with two steps each. `sample_test_1`
+completes immediately. `sample_test_2` emits step 1 and waits at sync point 1;
+a matching release emits step 2 and SUCCESS. Abort while waiting emits ABORTED.
+Both are cooperative demonstrations, not a scheduler for arbitrary blocking test
+functions. FAIL is represented and encodable but not produced by these samples.
 
-## Wire structure
+The new schema is wire incompatible with the previous envelope: message tags,
+nesting, and some field meanings have changed. Both peers must migrate together.
+There is no version negotiation field.
 
-Each transmitted frame is:
+## Serialization and transport
+
+Messages use proto3. Integers are `uint32` (0 through 4294967295), encoded as
+varints; booleans and enums also use varints. Strings carry UTF-8 bytes. Nested
+messages are length-delimited. Field numbers below are protobuf tags, not byte
+offsets. A `oneof` selects at most one alternative; protobuf also permits it to
+be unset. The application must validate required selections and semantic rules.
+
+Scalar fields default to zero, false, or empty string and have no explicit
+presence tracking. Defaults can be omitted on the wire. For example, omitted
+`status` means `RESULT_OK` in `TargetToHost`, or `SUCCESS` in
+`TestFinishedEvent`. The comment describing `total_steps` as optional does not
+make it a proto3 `optional` field: absent and explicitly zero are indistinguishable.
+
+TTP frames have the following structure in both directions:
 
 ```text
-0x00 | COBS(protobuf HostTargetMessage) | 0x00
+0x00 | COBS(protobuf bytes | CRC16 high byte | CRC16 low byte) | 0x00
 ```
 
-COBS removes zero bytes from the encoded body so zero can delimit frames. There
-is no length header, checksum, protocol version, request ID, or test-run ID.
-The codecs do not select a serial port, baud rate, or network transport.
+CRC-16/CCITT-FALSE parameters: polynomial `0x1021`, initial value `0xFFFF`,
+no input/output reflection, and final XOR `0x0000`. The standard check input
+ASCII `123456789` produces `0x29B1`. CRC covers only the serialized protobuf
+bytes, excluding delimiters, COBS code bytes, and the CRC itself. Append its
+high byte first, then its low byte, and COBS-encode the complete result. This
+also escapes any zero bytes in the CRC. CRC is a framing trailer, not a protobuf
+field, so no schema or nanopb options change is needed.
 
-`encode_frame` / `Ttp_EncodeFrame` produce both delimiters.
-`decode_frame` / `Ttp_DecodeFrame` take only the COBS body, with delimiters removed.
-The stream readers discard bytes before an opening delimiter and ignore empty
-delimiter intervals. Each frame emitted by the encoder has its own opening and
-closing delimiter; callers should preserve both when concatenating frames.
-The C reader drops oversized bodies until a delimiter and does not send a NACK
-for that drop. EOF ends target input; EOF during an incomplete frame discards it.
-The Python reader has no explicit frame-size bound or receive timeout.
+Receivers split the stream on zero delimiters, COBS-decode the body, require
+at least two decoded bytes, verify and remove the CRC trailer, and only then
+parse protobuf. A CRC mismatch returns `TTP_STATUS_CRC_FAILED` in C and raises
+`ValueError("CRC16 mismatch")` in Python. Missing trailers and malformed COBS
+are framing errors. Rejected frames must not reach command dispatch. The
+sample target discards malformed/CRC-invalid frames and writes a debug diagnostic;
+it sends no response because the request sequence ID cannot be trusted.
 
-Serialization uses proto3, package `ttp`. `uint32` fields are unsigned 32-bit
-integers encoded as protobuf varints; strings are UTF-8. Scalar defaults are zero,
-false, or empty string and are normally omitted from the encoded nested message.
-For example, an omitted `status` in a selected `TestFinished` means `SUCCESS`.
+Frame decoders accept the COBS body with delimiters removed. No length field is
+needed because the zero delimiters bound each COBS body, and the decoded body's
+last two bytes are always the CRC. Protobuf does not itself delimit top-level
+messages on a stream; its internal length fields apply to individual fields.
+CRC detects accidental corruption with a finite probability of undetected errors;
+it is not an absolute correctness guarantee or authentication mechanism.
 
-## Envelope and message inventory
+Both C and Python codecs enforce this CRC framing on both directional envelopes.
+CRC-less frames are no longer supported. There is no schema-defined timestamp, retry mechanism,
+timeout, or transport configuration.
 
-`HostTargetMessage` contains `oneof payload`. The selected envelope field identifies
-the message type; there is no separate opcode. The numbers below are protobuf
-field numbers, not fixed byte offsets. Application messages use one selected
-payload. The schema also permits an unset payload; the codecs do not enforce
-its presence, and the sample target rejects it as unsupported.
+## Host-to-target envelope
 
-| Envelope field | Tag | Type | Direction and current support |
+`HostToTarget` carries one command per request.
+
+| Field | Tag | Type | Meaning |
 | --- | ---: | --- | --- |
-| `ack` | 1 | `Ack` | Target to host in demo; generic schema message |
-| `sync` | 2 | `Sync` | Intended target to host; defined but never emitted by demo |
-| `sync_release` | 3 | `SyncRelease` | Host to target; acknowledged only in demo |
-| `get_tests` | 50 | `GetTests` | Host to target; implemented |
-| `get_test` | 51 | `GetTest` | Host to target; implemented |
-| `execute_test` | 52 | `ExecuteTest` | Host to target; implemented |
-| `get_tests_response` | 101 | `GetTestsResponse` | Target to host; implemented |
-| `get_test_response` | 102 | `GetTestResponse` | Target to host; implemented |
-| `test_step` | 103 | `TestStep` | Target to host; emitted during execution |
-| `log` | 104 | `Log` | Target to host; demo emits INFO |
-| `test_finished` | 105 | `TestFinished` | Target to host; demo produces SUCCESS or FAIL |
+| `seq_id` | 1 | uint32 | Host increments this for each request; use a nonzero value so the response can be distinguished from an event. |
+| `get_tests` | 2 | GetTestsCmd | Requests the registered test count. |
+| `get_test_info` | 3 | GetTestInfoCmd | Requests metadata for one test. |
+| `execute_test` | 4 | ExecuteTestCmd | Requests execution with a host-selected run ID. |
+| `abort_test` | 5 | AbortTestCmd | Requests cancellation of a run. |
+| `sync_release` | 6 | SyncReleaseCmd | Releases a synchronization point for a run. |
 
-The schema groups Ack, Sync, and SyncRelease as common messages but does not
-enforce direction. The demo target accepts only the four host commands above;
-receiving any other selected payload produces an unsupported-message NACK.
+The five command fields form `oneof cmd`. An unset command is representable but
+is rejected with RESULT_ERR_INVALID when its sequence ID is nonzero.
+The Python master assigns wire sequence IDs in `send()`, starting at 1 and
+wrapping from 4294967295 to 1. It overwrites any supplied command sequence ID.
+The C target silently discards requests with sequence ID zero. Duplicate requests
+are not detected or cached; each is processed again.
 
-## Payload fields and behavior
+## Target-to-host envelope
 
-Field numbers in this table belong to each nested payload, independently of the
-envelope tag.
+`TargetToHost` carries either a direct response or an asynchronous event.
 
-| Message | Fields (`number: name: type`) | Purpose and current behavior |
+| Field | Tag | Type | Meaning |
+| --- | ---: | --- | --- |
+| `seq_id` | 1 | uint32 | Nonzero: echoes the request ID. Zero: asynchronous event. |
+| `status` | 2 | ResultCode | Command result, meaningful only for nonzero `seq_id`. |
+| `tests_count` | 3 | GetTestsResp | Successful GetTests response data. |
+| `test_info` | 4 | GetTestInfoResp | Successful GetTestInfo response data. |
+| `test_event` | 5 | TestEvent | Asynchronous step, sync, or completion event. |
+| `log` | 6 | LogEvent | Asynchronous diagnostic event. |
+
+The four data fields form `oneof payload`. For a successful discovery command,
+select its corresponding response payload. Execute, abort, and sync release
+have no dedicated response data: return the echoed `seq_id` and `RESULT_OK`
+with no payload. Error responses carry a result code without a payload.
+For asynchronous messages, use `seq_id=0` and select `test_event` or `log`;
+`status` has no meaning in this case. These relationships are described by the
+schema comments but are not enforced by protobuf encoding.
+
+`ResultCode` replaces the old ACK/NACK message and free-text error field:
+
+| Value | Name | Meaning |
+| ---: | --- | --- |
+| 0 | RESULT_OK | Command accepted or completed successfully as appropriate. Execution acceptance does not imply that the test passed. |
+| 1 | RESULT_ERR_INDEX | Test index is outside `0 <= index < total_tests`. |
+| 2 | RESULT_ERR_BUSY | A test is already executing. |
+| 3 | RESULT_ERR_NOT_FOUND | No corresponding active test/run or synchronization point exists. |
+| 4 | RESULT_ERR_INVALID | Command is invalid in the current state. |
+
+The sample target checks BUSY before index validity on execution. Abort and
+release return NOT_FOUND for a missing run or mismatched identity; release also
+requires a pending matching sync point. Unset/unknown commands return INVALID.
+There is no command error text field; LogEvent has no sequence correlation.
+
+## Command and response payloads
+
+Field numbers here are local to each nested message.
+
+| Message | Fields (`tag: name: type`) | Behavior |
 | --- | --- | --- |
-| `GetTests` | None | Requests the test count. Target replies directly with `GetTestsResponse`, without a preceding ACK. |
-| `GetTestsResponse` | `1: total_tests: uint32` | Reports how many tests are registered. Demo reports 2. |
-| `GetTest` | `1: index: uint32` | Requests the name of one test by zero-based index. Valid range is `0 <= index < total_tests`. |
-| `GetTestResponse` | `1: index: uint32`, `2: name: string` | Returns the requested index and test name. No step count, parameters, or other metadata is included. |
-| `ExecuteTest` | `1: index: uint32` | Starts the indexed test. Valid requests receive an ACK followed by execution events; invalid indices receive only a NACK. |
-| `Ack` | `1: success: bool`, `2: error_message: string` | `true` accepts the command; `false` is a NACK. Error text explains rejection. An execution ACK means accepted, not passed. Successful demo ACKs have empty error text. |
-| `TestStep` | `1: step_number: uint32`, `2: description: string`, `3: success: bool` | Reports a step and its outcome. Demo uses steps 1 and 2. There is no test index, run ID, timestamp, or total-step count. |
-| `Log` | `1: level: LogLevel`, `2: message: string` | Carries diagnostic text in the protocol stream. Levels are `INFO=0`, `WARNING=1`, `ERROR=2`. Demo sends INFO with `test started`. |
-| `Sync` | `1: sync_id: uint32` | Intended to announce a target synchronization point where execution waits for host release. Encoding is supported; waiting and emission are not implemented in the demo. |
-| `SyncRelease` | `1: sync_id: uint32` | Intended to release the corresponding synchronization point. Demo logs the ID and returns a successful ACK for any ID; it tracks no pending sync and resumes no blocked execution. |
-| `TestFinished` | `1: status: Status` | Ends the event stream for a test. Status values are `SUCCESS=0`, `FAIL=1`, `ABORTED=2`. Demo chooses SUCCESS/FAIL from the test function's boolean return; ABORTED is defined but not produced. |
+| GetTestsCmd | None | Requests how many tests are registered. |
+| GetTestsResp | `1: total_tests: uint32` | Returns the count; zero represents an empty registry. |
+| GetTestInfoCmd | `1: index: uint32` | Selects a test by zero-based index. |
+| GetTestInfoResp | `1: index: uint32`, `2: name: string`, `3: total_steps: uint32` | Returns index, display name, and step count for progress reporting. Meaning of a zero/unknown step count is not specified. |
+| ExecuteTestCmd | `1: index: uint32`, `2: run_id: uint32` | Selects a test and assigns a host-chosen run ID for subsequent events. |
+| AbortTestCmd | `1: run_id: uint32` | Requests abort of the matching run; the schema provides ABORTED as its terminal result. The sample acknowledges abort then emits ABORTED and clears the active state. |
+| SyncReleaseCmd | `1: run_id: uint32`, `2: sync_id: uint32` | Identifies both the run and synchronization point to resume. |
 
-## String and buffer limits
+`seq_id` identifies one command/response exchange. `run_id` identifies an execution
+across multiple commands and events; for example, execute and abort have different
+sequence IDs but may refer to the same run. The sample accepts any uint32 run ID, including zero, and
+permits reuse after completion. The Python execution iterator allocates increasing
+nonzero run IDs by default, or accepts an explicit ID. There is no run history or
+duplicate suppression. Receivers must not infer the run ID from the sequence ID
+or test index.
 
-The nanopb options allocate fixed C string arrays, including the terminating NUL:
+## Execution and diagnostic events
 
-| Field | C array size | Maximum text bytes excluding NUL |
-| --- | ---: | ---: |
-| `GetTestResponse.name` | 32 | 31 |
-| `Ack.error_message` | 64 | 63 |
-| `Log.message` | 64 | 63 |
-| `TestStep.description` | 64 | 63 |
+`TargetToHost.test_event` contains a `TestEvent` wrapper:
 
-These are byte limits, not Unicode character counts. The comments in the options
-file say 32/64 characters, but `max_size` includes the terminator. C text-copy
-helpers truncate to fit. Python bindings do not enforce these nanopb limits;
-oversized Python strings can fail decoding on the C side.
+| Field | Tag | Type | Meaning |
+| --- | ---: | --- | --- |
+| `run_id` | 1 | uint32 | Host-selected execution ID from ExecuteTestCmd. |
+| `test_index` | 2 | uint32 | Index of the test producing the event. |
+| `step` | 3 | TestStepEvent | Step result. |
+| `sync` | 4 | SyncWaitEvent | Target has reached a synchronization wait point. |
+| `finished` | 5 | TestFinishedEvent | Terminal execution result. |
 
-The generated C maximum encoded envelope size is 76 bytes. `TTP_MAX_FRAME_SIZE`
-is 79 bytes, including delimiters, and the target allows 77 bytes for the COBS
-body. These are buffer bounds, not fixed message lengths.
+`step`, `sync`, and `finished` form `oneof event`. The wrapper supplies execution
+identity for all three alternatives.
 
-## Discovery and execution flow
+| Event | Fields (`tag: name: type`) | Meaning |
+| --- | --- | --- |
+| TestStepEvent | `1: step_number: uint32`, `2: success: bool`, `3: description: string` | Reports a step outcome and description. The sample emits steps 1 and 2; failure policy for real tests remains application-specific. |
+| SyncWaitEvent | `1: sync_id: uint32` | Announces that the run is waiting until released with the matching run ID and sync ID. The sample uses sync ID 1 and has no wait timeout. |
+| TestFinishedEvent | `1: status: Status` | Reports `SUCCESS=0`, `FAIL=1`, or `ABORTED=2`. This result is separate from command acceptance. |
+| LogEvent | `1: level: Level`, `2: message: string` | Reports `INFO=0`, `WARNING=1`, or `ERROR=2` and diagnostic text. |
 
-The Python host discovers tests sequentially:
+`LogEvent` is directly inside `TargetToHost`, outside `TestEvent`; it has no
+`run_id`, `test_index`, or timestamp. Logs cannot be explicitly assigned to a
+run from their fields alone.
+
+## Message flow examples
+
+Illustrative discovery and execution (values are examples, not a fixed registry):
 
 ```text
-Host -> Target: GetTests {}
-Target -> Host: GetTestsResponse { total_tests: 2 }
-Host -> Target: GetTest { index: 0 }
-Target -> Host: GetTestResponse { index: 0, name: "sample_test_1" }
-Host -> Target: GetTest { index: 1 }
-Target -> Host: GetTestResponse { index: 1, name: "sample_test_2" }
+Host -> Target: HostToTarget { seq_id: 1, get_tests: {} }
+Target -> Host: TargetToHost { seq_id: 1, status: RESULT_OK, tests_count: { total_tests: 2 } }
+Host -> Target: HostToTarget { seq_id: 2, get_test_info: { index: 0 } }
+Target -> Host: TargetToHost { seq_id: 2, status: RESULT_OK, test_info: { index: 0, name: "example", total_steps: 2 } }
+Host -> Target: HostToTarget { seq_id: 3, execute_test: { index: 0, run_id: 100 } }
+Target -> Host: TargetToHost { seq_id: 3, status: RESULT_OK }
+Target -> Host: TargetToHost { seq_id: 0, test_event: { run_id: 100, test_index: 0, step: { step_number: 1, success: true, description: "ready" } } }
+Target -> Host: TargetToHost { seq_id: 0, test_event: { run_id: 100, test_index: 0, sync: { sync_id: 7 } } }
+Host -> Target: HostToTarget { seq_id: 4, sync_release: { run_id: 100, sync_id: 7 } }
+Target -> Host: TargetToHost { seq_id: 4, status: RESULT_OK }
+Target -> Host: TargetToHost { seq_id: 0, test_event: { run_id: 100, test_index: 0, finished: { status: SUCCESS } } }
 ```
 
-For each valid execution, the sample target sends this exact sequence:
+An accepted abort uses a new command sequence ID and the active run ID:
 
 ```text
-Host -> Target: ExecuteTest { index: 0 }
-Target -> Host: Ack { success: true }
-Target -> Host: Log { level: INFO, message: "test started" }
-Target -> Host: TestStep { step_number: 1, description: "calling test function", success: true }
-               [target calls the selected test function]
-Target -> Host: TestStep { step_number: 2, description: "test function returned", success: result }
-Target -> Host: TestFinished { status: SUCCESS or FAIL }
+Host -> Target: HostToTarget { seq_id: 5, abort_test: { run_id: 101 } }
+Target -> Host: TargetToHost { seq_id: 5, status: RESULT_OK }
+Target -> Host: TargetToHost { seq_id: 0, test_event: { run_id: 101, test_index: 0, finished: { status: ABORTED } } }
 ```
 
-Both registered sample functions currently return true. The host execution
-iterator yields the initial response and stops immediately if it is not a
-successful ACK. After acceptance it yields messages until `TestFinished`.
-It does not automatically answer a `Sync` event.
+The sample sends the direct command response before events caused by that
+command. A rejected command returns its nonzero sequence ID and error status,
+without response data or a new completion event.
 
-## Current state handling and errors
+## Execution states and remaining policy decisions
 
-There is no explicit protocol state enum or enforced session state machine.
-The target reads a frame, decodes it, queues the message, and drains the queue
-synchronously. Queue depth is four, but the current loop drains after every
-successful enqueue. Test execution blocks this same loop; commands are not read
-while a test function runs. The queue therefore does not provide concurrent
-command handling or cancellation during a running test.
+The schema has no explicit state field. The sample target tracks idle versus
+active execution and a pending sync ID, implementing these transitions:
 
-Conceptually the current execution flow is idle -> accepted -> running -> finished
--> idle. A rejected execution stays idle and emits no `TestFinished`. A future
-waiting-for-sync state is suggested by the schema, but is absent from the demo.
-
-| Condition | Current target response |
+| Trigger | Conceptual behavior |
 | --- | --- |
-| Invalid index for GetTest or ExecuteTest | `Ack(false, "test index out of range")` |
-| Unsupported or unset payload | `Ack(false, "unsupported message")` |
-| COBS/protobuf decoding failure | `Ack(false, "decode failed")` |
-| Queue insertion failure | `Ack(false, "queue full")` (defensive path) |
-| Oversized frame | Discard and debug log; no protocol response |
+| Valid ExecuteTest while idle | Accept command and begin the selected run. |
+| ExecuteTest while a run is active | RESULT_ERR_BUSY. |
+| Test reaches sync point | Emit SyncWaitEvent and wait for matching release. |
+| Matching SyncRelease | Accept release and resume the run. |
+| Completion | Emit TestFinishedEvent with SUCCESS or FAIL; return to idle. |
+| Accepted AbortTest | End the identified run with ABORTED; return to idle. |
 
-The C codec reports local statuses `OK`, `INVALID_ARGUMENT`, `BUFFER_TOO_SMALL`,
-`ENCODE_FAILED`, `DECODE_FAILED`, and `FRAMING_FAILED`, prefixed
-`TTP_STATUS_`. These are API return values, not wire messages. Python COBS errors
-raise `ValueError`; protobuf parse errors propagate from its runtime.
+The sample target has one active run. Its sync wait returns control to the input
+loop, so discovery, busy checks, abort, and release remain available while waiting.
+There is no queue, background thread, or preemption of blocking application code.
+Discovery is allowed during a run. Completion clears the active run and pending
+sync before sending the terminal event. A later abort or repeated release returns
+NOT_FOUND. Commands are processed sequentially in input order, resolving
+release/abort races in that order. EOF terminates the process without an extra
+terminal event. There are no retry, timeout, or disconnect-recovery policies.
 
-The host request helper reads the next message without request correlation.
-There are no retries, receive timeouts, duplicate detection, cancellation command,
-heartbeat, or automatic recovery for a hung test. Only sequential discovery and
-execution are demonstrated. Terminal failure/abort policy beyond the boolean
-test result, synchronization validation, and concurrent test runs are not defined
-by the current application.
+`TtpProcessMaster.request()` allows one outstanding request and matches the
+response sequence ID, preserving intervening asynchronous events in a deque.
+`receive()` drains those events first. An unrelated nonzero response raises an
+error. The API is single-threaded; it does not support concurrent request callers.
+`execute_test(index, run_id=None, auto_release=True)` yields acceptance and events,
+checks test/run identity, automatically releases sync points by default, and stops
+at the matching terminal event. Set `auto_release=False` to handle sync explicitly
+with `release_sync()` or `abort_test()`. Discovery exposes both `get_manifest()`
+and `get_test_info()`, the latter including `total_steps`.
 
-## Local regeneration and demonstration
+The host bounds its incoming COBS body to 100 bytes (102-byte frame minus two
+delimiters) and drops oversized frames until a delimiter. The target has the same
+shared frame bound. Host CRC/protobuf exceptions propagate to the caller;
+requests have no receive timeout, and queued events have no fixed count limit.
 
-From the repository root, with dependencies and gcc available:
+## Nanopb storage limits
+
+`schema/ttp.options` matches the package-less message names:
+
+| Selector | max_size / C array bytes | Maximum UTF-8 text bytes excluding NUL |
+| --- | ---: | ---: |
+| GetTestInfoResp.name | 32 | 31 |
+| TestStepEvent.description | 64 | 63 |
+| LogEvent.message | 64 | 63 |
+
+`max_size` includes the terminating NUL. These are byte limits, not Unicode
+character counts. Python protobuf does not enforce nanopb string limits;
+applications must respect them for C interoperability. There is no Ack error
+string to configure in the new schema. All other fields are scalar or nested
+messages, requiring no string/repeated-field size options.
+
+Temporary generation against the current schema/options produces static arrays
+for all three strings and these maximum encoded sizes:
+
+| Message | Maximum protobuf bytes |
+| --- | ---: |
+| HostToTarget | 20 |
+| TargetToHost | 97 |
+| TestEvent | 87 |
+| TestStepEvent | 73 |
+| LogEvent | 67 |
+| GetTestInfoResp | 45 |
+
+These are bounds, not fixed lengths. With two CRC bytes, the frame-size bound is
+`(N + 2) + floor((N + 2) / 254) + 3`, including both delimiters. Allocate
+25 bytes for a framed HostToTarget and 102 bytes for a framed TargetToHost.
+The C shared buffer macros use the larger envelope bound (97 protobuf bytes),
+giving a 99-byte decoded frame payload and a 102-byte complete frame bound. Raw protobuf encode/decode APIs do not add or check a CRC; CRC applies
+to the frame APIs.
+
+## Validation and regeneration
+
+From the repository root, with the Python dependencies and gcc available:
 
 ```powershell
 cmd /c ttp\generate_pb_files.bat
 cmd /c ttp\C\build_slave.bat
 python -m ttp.python.master --execute 0
+python -m ttp.python.master --execute 1
+python -m unittest discover -s ttp/tests -v
 ```
 
-The generator recreates both language bindings from `schema/ttp.proto` and the
-nanopb options. The build produces `ttp/C/ttp_slave.exe`. The host also supports
-`--build`, `--slave-exe`, `--execute`, `--debug-log`, and `--debug-shell`.
-This describes a local process demonstration; hardware or serial transport
-behavior is not established by that demonstration.
+The generator recreates both binding sets from the current schema and options.
+The build produces `ttp/C/ttp_slave.exe`; the Python launcher also supports
+`--build`, `--slave-exe`, `--debug-log`, and `--debug-shell`.
+
+Regression tests compile C bridges and the target with warnings treated as errors.
+They cover both directional codecs and message alternatives, boundary-size
+payloads, CRC check vectors, every single-bit change in a representative payload
+and trailer, malformed/truncated frames, discovery, sequence correlation and
+wraparound, run identity, busy and invalid-command errors, sync mismatch/release,
+abort, zero run IDs, and preservation of events while awaiting responses. Corrupt,
+zero-sequence, and oversized requests are verified to leave target execution idle.
+Local sample executions complete through both normal and sync paths. Physical
+transport behavior, hardware tests, and integration of real blocking test
+functions remain unvalidated.

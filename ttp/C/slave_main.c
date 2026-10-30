@@ -1,45 +1,23 @@
 #include "ttp.h"
-
-#include <stdarg.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-
+#include <stdarg.h>
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
 #endif
 
-#define RX_QUEUE_DEPTH 4U
-#define RX_FRAME_PAYLOAD_MAX (TTP_MAX_FRAME_SIZE - 2U)
-
-typedef bool (*SlaveTestFn)(void);
-
-typedef struct
-{
-    const char *name;
-    SlaveTestFn run;
-} SlaveTest_t;
-
-typedef struct
-{
-    ttp_HostTargetMessage messages[RX_QUEUE_DEPTH];
-    size_t head;
-    size_t tail;
-    size_t count;
-} MessageQueue_t;
-
+/* Cooperative demonstration: test 0 completes immediately; test 1 waits at
+ * sync point 1, allowing discovery, busy rejection, release, and abort. */
+static const char *test_names[] = {"sample_test_1", "sample_test_2"};
 static FILE *debug_stream;
+static bool active;
+static uint32_t run_id, test_index, waiting_sync;
 
 static void debug_log(const char *format, ...)
 {
     va_list args;
-
-    if (debug_stream == NULL)
-    {
-        return;
-    }
-
+    if (debug_stream == NULL) return;
     va_start(args, format);
     (void)vfprintf(debug_stream, format, args);
     va_end(args);
@@ -47,203 +25,121 @@ static void debug_log(const char *format, ...)
     (void)fflush(debug_stream);
 }
 
-static bool sample_test_1(void)
-{
-    debug_log("running sample_test_1");
-    return true;
-}
-
-static bool sample_test_2(void)
-{
-    debug_log("running sample_test_2");
-    return true;
-}
-
-static const SlaveTest_t slave_tests[] =
-{
-    {"sample_test_1", sample_test_1},
-    {"sample_test_2", sample_test_2},
-};
-
-static const size_t slave_test_count = sizeof(slave_tests) / sizeof(slave_tests[0]);
-
-static bool queue_push(MessageQueue_t *queue, const ttp_HostTargetMessage *message)
-{
-    if ((queue == NULL) || (message == NULL) || (queue->count >= RX_QUEUE_DEPTH))
-    {
-        return false;
-    }
-
-    queue->messages[queue->tail] = *message;
-    queue->tail = (queue->tail + 1U) % RX_QUEUE_DEPTH;
-    queue->count++;
-
-    return true;
-}
-
-static bool queue_pop(MessageQueue_t *queue, ttp_HostTargetMessage *message)
-{
-    if ((queue == NULL) || (message == NULL) || (queue->count == 0U))
-    {
-        return false;
-    }
-
-    *message = queue->messages[queue->head];
-    queue->head = (queue->head + 1U) % RX_QUEUE_DEPTH;
-    queue->count--;
-
-    return true;
-}
-
-static void copy_text(char *destination, size_t destination_size, const char *source)
-{
-    if ((destination == NULL) || (destination_size == 0U))
-    {
-        return;
-    }
-
-    destination[0] = '\0';
-    if (source != NULL)
-    {
-        (void)strncpy(destination, source, destination_size - 1U);
-        destination[destination_size - 1U] = '\0';
-    }
-}
-
-static bool send_message(const ttp_HostTargetMessage *message)
+static void send_message(const TargetToHost *message)
 {
     uint8_t frame[TTP_MAX_FRAME_SIZE];
-    size_t frame_size = 0U;
-    Ttp_Status_t status;
+    size_t size = 0U;
+    if (Ttp_EncodeTargetToHostFrame(message, frame, sizeof(frame), &size) != TTP_STATUS_OK ||
+        fwrite(frame, 1U, size, stdout) != size || fflush(stdout) != 0)
+        debug_log("protocol output failed");
+}
 
-    status = Ttp_EncodeFrame(message, frame, sizeof(frame), &frame_size);
-    if (status != TTP_STATUS_OK)
+static void reply(uint32_t seq, ResultCode code)
+{
+    TargetToHost response = TargetToHost_init_zero;
+    response.seq_id = seq;
+    response.status = code;
+    send_message(&response);
+}
+
+static TargetToHost test_event(pb_size_t tag)
+{
+    TargetToHost response = TargetToHost_init_zero;
+    response.which_payload = TargetToHost_test_event_tag;
+    response.payload.test_event.run_id = run_id;
+    response.payload.test_event.test_index = test_index;
+    response.payload.test_event.which_event = tag;
+    return response;
+}
+
+static void step(uint32_t number, const char *description)
+{
+    TargetToHost response = test_event(TestEvent_step_tag);
+    response.payload.test_event.event.step.step_number = number;
+    response.payload.test_event.event.step.success = true;
+    (void)snprintf(response.payload.test_event.event.step.description,
+        sizeof(response.payload.test_event.event.step.description), "%s", description);
+    send_message(&response);
+}
+
+static void finish(TestFinishedEvent_Status status)
+{
+    TargetToHost response = test_event(TestEvent_finished_tag);
+    response.payload.test_event.event.finished.status = status;
+    active = false;
+    waiting_sync = 0U;
+    send_message(&response);
+}
+
+static void handle_message(const HostToTarget *message)
+{
+    TargetToHost response = TargetToHost_init_zero;
+    uint32_t seq = message->seq_id;
+    response.seq_id = seq;
+    /* Zero is reserved for events. Do not emit a reply that could look like one. */
+    if (seq == 0U) { debug_log("dropping zero sequence ID"); return; }
+    switch (message->which_cmd)
     {
-        debug_log("encode failed: status=%d", (int)status);
-        return false;
-    }
-
-    if (fwrite(frame, 1U, frame_size, stdout) != frame_size)
-    {
-        debug_log("stdout write failed");
-        return false;
-    }
-    (void)fflush(stdout);
-
-    return true;
-}
-
-static void send_ack(bool success, const char *error_message)
-{
-    ttp_HostTargetMessage response = Ttp_MakeAck(success, error_message);
-    (void)send_message(&response);
-}
-
-static void send_log(ttp_Log_LogLevel level, const char *text)
-{
-    ttp_HostTargetMessage response = ttp_HostTargetMessage_init_zero;
-
-    response.which_payload = ttp_HostTargetMessage_log_tag;
-    response.payload.log.level = level;
-    copy_text(response.payload.log.message, sizeof(response.payload.log.message), text);
-    (void)send_message(&response);
-}
-
-static void send_test_step(uint32_t step_number, const char *description, bool success)
-{
-    ttp_HostTargetMessage response = ttp_HostTargetMessage_init_zero;
-
-    response.which_payload = ttp_HostTargetMessage_test_step_tag;
-    response.payload.test_step.step_number = step_number;
-    response.payload.test_step.success = success;
-    copy_text(response.payload.test_step.description,
-              sizeof(response.payload.test_step.description),
-              description);
-    (void)send_message(&response);
-}
-
-static void send_test_finished(ttp_TestFinished_Status status)
-{
-    ttp_HostTargetMessage response = ttp_HostTargetMessage_init_zero;
-
-    response.which_payload = ttp_HostTargetMessage_test_finished_tag;
-    response.payload.test_finished.status = status;
-    (void)send_message(&response);
-}
-
-static void handle_get_tests(void)
-{
-    ttp_HostTargetMessage response = ttp_HostTargetMessage_init_zero;
-
-    debug_log("handling get_tests");
-    response.which_payload = ttp_HostTargetMessage_get_tests_response_tag;
-    response.payload.get_tests_response.total_tests = (uint32_t)slave_test_count;
-    (void)send_message(&response);
-}
-
-static void handle_get_test(uint32_t index)
-{
-    ttp_HostTargetMessage response = ttp_HostTargetMessage_init_zero;
-
-    debug_log("handling get_test index=%u", (unsigned int)index);
-    if (index >= slave_test_count)
-    {
-        send_ack(false, "test index out of range");
-        return;
-    }
-
-    response.which_payload = ttp_HostTargetMessage_get_test_response_tag;
-    response.payload.get_test_response.index = index;
-    copy_text(response.payload.get_test_response.name,
-              sizeof(response.payload.get_test_response.name),
-              slave_tests[index].name);
-    (void)send_message(&response);
-}
-
-static void handle_execute_test(uint32_t index)
-{
-    bool success;
-
-    debug_log("handling execute_test index=%u", (unsigned int)index);
-    if (index >= slave_test_count)
-    {
-        send_ack(false, "test index out of range");
-        return;
-    }
-
-    send_ack(true, "");
-    send_log(ttp_Log_LogLevel_INFO, "test started");
-    send_test_step(1U, "calling test function", true);
-    success = slave_tests[index].run();
-    send_test_step(2U, "test function returned", success);
-    send_test_finished(success ? ttp_TestFinished_Status_SUCCESS : ttp_TestFinished_Status_FAIL);
-}
-
-static void handle_message(const ttp_HostTargetMessage *message)
-{
-    switch (message->which_payload)
-    {
-        case ttp_HostTargetMessage_get_tests_tag:
-            handle_get_tests();
+        case HostToTarget_get_tests_tag:
+            response.which_payload = TargetToHost_tests_count_tag;
+            response.payload.tests_count.total_tests = 2U;
+            send_message(&response);
             break;
-
-        case ttp_HostTargetMessage_get_test_tag:
-            handle_get_test(message->payload.get_test.index);
+        case HostToTarget_get_test_info_tag:
+            if (message->cmd.get_test_info.index >= 2U) {
+                reply(seq, ResultCode_RESULT_ERR_INDEX); break;
+            }
+            response.which_payload = TargetToHost_test_info_tag;
+            response.payload.test_info.index = message->cmd.get_test_info.index;
+            response.payload.test_info.total_steps = 2U;
+            (void)snprintf(response.payload.test_info.name, sizeof(response.payload.test_info.name),
+                "%s", test_names[message->cmd.get_test_info.index]);
+            send_message(&response);
             break;
-
-        case ttp_HostTargetMessage_execute_test_tag:
-            handle_execute_test(message->payload.execute_test.index);
+        case HostToTarget_execute_test_tag:
+            if (active) { reply(seq, ResultCode_RESULT_ERR_BUSY); break; }
+            if (message->cmd.execute_test.index >= 2U) {
+                reply(seq, ResultCode_RESULT_ERR_INDEX); break;
+            }
+            active = true;
+            run_id = message->cmd.execute_test.run_id;
+            test_index = message->cmd.execute_test.index;
+            reply(seq, ResultCode_RESULT_OK);
+            response.seq_id = 0U;
+            response.which_payload = TargetToHost_log_tag;
+            response.payload.log.level = LogEvent_Level_INFO;
+            (void)snprintf(response.payload.log.message, sizeof(response.payload.log.message), "test started");
+            send_message(&response);
+            step(1U, "test started");
+            if (test_index == 1U) {
+                waiting_sync = 1U;
+                response = test_event(TestEvent_sync_tag);
+                response.payload.test_event.event.sync.sync_id = waiting_sync;
+                send_message(&response);
+            } else {
+                step(2U, "test completed");
+                finish(TestFinishedEvent_Status_SUCCESS);
+            }
             break;
-
-        case ttp_HostTargetMessage_sync_release_tag:
-            debug_log("handling sync_release sync_id=%u",
-                      (unsigned int)message->payload.sync_release.sync_id);
-            send_ack(true, "");
+        case HostToTarget_abort_test_tag:
+            if (!active || message->cmd.abort_test.run_id != run_id) {
+                reply(seq, ResultCode_RESULT_ERR_NOT_FOUND); break;
+            }
+            reply(seq, ResultCode_RESULT_OK);
+            finish(TestFinishedEvent_Status_ABORTED);
             break;
-
+        case HostToTarget_sync_release_tag:
+            if (!active || message->cmd.sync_release.run_id != run_id ||
+                waiting_sync == 0U || message->cmd.sync_release.sync_id != waiting_sync) {
+                reply(seq, ResultCode_RESULT_ERR_NOT_FOUND); break;
+            }
+            reply(seq, ResultCode_RESULT_OK);
+            waiting_sync = 0U;
+            step(2U, "sync released; test completed");
+            finish(TestFinishedEvent_Status_SUCCESS);
+            break;
         default:
-            debug_log("unsupported message tag=%u", (unsigned int)message->which_payload);
-            send_ack(false, "unsupported message");
+            reply(seq, ResultCode_RESULT_ERR_INVALID);
             break;
     }
 }
@@ -325,47 +221,20 @@ static bool configure_debug_log(int argc, char **argv)
 
 int main(int argc, char **argv)
 {
-    MessageQueue_t queue;
-    uint8_t frame[RX_FRAME_PAYLOAD_MAX];
-    size_t frame_size = 0U;
-
-    (void)memset(&queue, 0, sizeof(queue));
+    uint8_t frame[TTP_MAX_FRAME_SIZE - 2U];
+    size_t size = 0U;
     configure_stdio_binary();
-    if (!configure_debug_log(argc, argv))
-    {
-        return 2;
-    }
-
-    debug_log("TTP slave started");
-    while (read_next_frame(frame, sizeof(frame), &frame_size))
-    {
-        ttp_HostTargetMessage message;
-        Ttp_Status_t status = Ttp_DecodeFrame(&message, frame, frame_size);
-        if (status != TTP_STATUS_OK)
-        {
-            debug_log("decode failed: status=%d", (int)status);
-            send_ack(false, "decode failed");
+    if (!configure_debug_log(argc, argv)) return 2;
+    while (read_next_frame(frame, sizeof(frame), &size)) {
+        HostToTarget message = HostToTarget_init_zero;
+        Ttp_Status_t status = Ttp_DecodeHostToTargetFrame(&message, frame, size);
+        if (status != TTP_STATUS_OK) {
+            /* A damaged seq_id is untrusted: discard without a correlated reply. */
+            debug_log("discarding invalid frame: status=%d", (int)status);
             continue;
         }
-
-        if (!queue_push(&queue, &message))
-        {
-            debug_log("queue full");
-            send_ack(false, "queue full");
-            continue;
-        }
-
-        while (queue_pop(&queue, &message))
-        {
-            handle_message(&message);
-        }
+        handle_message(&message);
     }
-
-    debug_log("TTP slave stopped");
-    if ((debug_stream != NULL) && (debug_stream != stderr))
-    {
-        (void)fclose(debug_stream);
-    }
-
+    if (debug_stream != NULL && debug_stream != stderr) (void)fclose(debug_stream);
     return 0;
 }

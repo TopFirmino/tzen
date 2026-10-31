@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tzen"
+version = "0.1.0"
+description = "Cooperative embedded test harness client over CRC-protected TTP"
+requires-python = ">=3.10"
+dependencies = ["protobuf>=7.35.0,<8", "pyserial>=3.5,<4"]
+
+[tool.setuptools]
+packages = ["tzen", "ttp", "ttp.python", "ttp.python.generated"]

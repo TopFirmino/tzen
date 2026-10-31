@@ -19,7 +19,7 @@ class CrcFramingTests(unittest.TestCase):
         harness.write_text(r'''
 #include <assert.h>
 #include <stdio.h>
-#include "ttp.c"
+#include "../src/ttp.c"
 int main(int argc, char **argv) {
     uint8_t body[TTP_MAX_FRAME_SIZE], frame[TTP_MAX_FRAME_SIZE];
     size_t length = 0, size = 0, i;
@@ -54,7 +54,7 @@ int main(int argc, char **argv) {
 ''')
         cls.exe = folder / 'crc_bridge.exe'
         subprocess.run(['gcc', '-std=c99', '-Wall', '-Wextra', '-Werror',
-                        '-I', str(ROOT / 'ttp/C'), '-I', str(ROOT / 'ttp/C/generated'),
+                        '-I', str(ROOT / 'ttp/C/inc'), '-I', str(ROOT / 'ttp/C/generated'),
                         '-I', str(ROOT / 'nanopb'),
                         str(harness), str(ROOT / 'ttp/C/generated/ttp.pb.c'),
                         *[str(ROOT / 'nanopb' / p) for p in

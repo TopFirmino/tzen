@@ -1,35 +1,26 @@
 # TTP (Tzen Test Protocol)
 
 This specification describes the current `schema/ttp.proto` and
-`schema/ttp.options` as of 2026-10-30. It describes the schema contract and the current C/Python local implementation.
+`schema/ttp.options` as of 2026-10-31. Execution behavior is documented in the harness and Arduino example.
 
-## Current implementation status
+## Scope and code layout
 
-The schema now has two directional envelopes, request sequence IDs, execution run
-IDs, structured result codes, abort commands, and nested execution events.
-There is no protobuf `package` declaration. Nanopb option selectors and generated
-C type names therefore have no `ttp.` / `ttp_` package prefix.
+`ttp` contains transmission protocol code only: schema/options, generated bindings,
+C protobuf/COBS/CRC codecs in `C/src` with headers in `C/inc`, and Python codecs
+and message constructors in `python`. Include both `C/inc` and `C/generated`,
+as well as nanopb headers, when building C code.
 
-Both language bindings have been regenerated from this schema and its options.
-The C codecs/target and Python wrapper/master now use `HostToTarget` and
-`TargetToHost`, including CRC-protected framing. The C APIs have explicit direction
-names: `Ttp_EncodeHostToTarget`, `Ttp_DecodeHostToTarget`,
-`Ttp_EncodeTargetToHost`, and `Ttp_DecodeTargetToHost`, with corresponding
-`...Frame` APIs for COBS/CRC framing. Callers initialize generated structs and
-select their command/payload/event tags directly; the old ACK constructors are
-removed. Raw APIs serialize protobuf only. Ignore decoder output on any error.
+The C harness engine and test lifecycle belong to `../testharness-c`.
+The Python harness client and USB serial transport belong to `../tzen`.
+The runnable Arduino firmware and Python example belong to `../examples/Arduino`.
 
-Python re-exports the new schema types and result codes. `encode_message` and
-`encode_frame` accept either envelope; `decode_message` and `decode_frame` default
-to `TargetToHost` and accept `HostToTarget` as an explicit second argument.
-Command helpers are `make_get_tests`, `make_get_test_info`, `make_execute_test`,
-`make_abort_test`, and `make_sync_release`.
-
-The sample registry contains two tests with two steps each. `sample_test_1`
-completes immediately. `sample_test_2` emits step 1 and waits at sync point 1;
-a matching release emits step 2 and SUCCESS. Abort while waiting emits ABORTED.
-Both are cooperative demonstrations, not a scheduler for arbitrary blocking test
-functions. FAIL is represented and encodable but not produced by these samples.
+Both bindings use the package-less schema. The C codec APIs are
+`Ttp_EncodeHostToTarget`, `Ttp_DecodeHostToTarget`, `Ttp_EncodeTargetToHost`, and
+`Ttp_DecodeTargetToHost`, plus corresponding `...Frame` APIs. Raw APIs handle
+protobuf only; frame APIs add or verify CRC and COBS. Ignore output on decoder
+errors. Python `decode_message` and `decode_frame` default to `TargetToHost` and
+accept `HostToTarget` as their second argument. Message constructors build data;
+command execution and response correlation are implemented outside this folder.
 
 The new schema is wire incompatible with the previous envelope: message tags,
 nesting, and some field meanings have changed. Both peers must migrate together.
@@ -68,8 +59,8 @@ at least two decoded bytes, verify and remove the CRC trailer, and only then
 parse protobuf. A CRC mismatch returns `TTP_STATUS_CRC_FAILED` in C and raises
 `ValueError("CRC16 mismatch")` in Python. Missing trailers and malformed COBS
 are framing errors. Rejected frames must not reach command dispatch. The
-sample target discards malformed/CRC-invalid frames and writes a debug diagnostic;
-it sends no response because the request sequence ID cannot be trusted.
+harness rejects malformed/CRC-invalid frames without a response because the
+request sequence ID cannot be trusted.
 
 Frame decoders accept the COBS body with delimiters removed. No length field is
 needed because the zero delimiters bound each COBS body, and the decoded body's
@@ -97,7 +88,7 @@ timeout, or transport configuration.
 
 The five command fields form `oneof cmd`. An unset command is representable but
 is rejected with RESULT_ERR_INVALID when its sequence ID is nonzero.
-The Python master assigns wire sequence IDs in `send()`, starting at 1 and
+The `tzen.Client` assigns wire sequence IDs in `request()`, starting at 1 and
 wrapping from 4294967295 to 1. It overwrites any supplied command sequence ID.
 The C target silently discards requests with sequence ID zero. Duplicate requests
 are not detected or cached; each is processed again.
@@ -216,43 +207,13 @@ The sample sends the direct command response before events caused by that
 command. A rejected command returns its nonzero sequence ID and error status,
 without response data or a new completion event.
 
-## Execution states and remaining policy decisions
+## Execution semantics
 
-The schema has no explicit state field. The sample target tracks idle versus
-active execution and a pending sync ID, implementing these transitions:
-
-| Trigger | Conceptual behavior |
-| --- | --- |
-| Valid ExecuteTest while idle | Accept command and begin the selected run. |
-| ExecuteTest while a run is active | RESULT_ERR_BUSY. |
-| Test reaches sync point | Emit SyncWaitEvent and wait for matching release. |
-| Matching SyncRelease | Accept release and resume the run. |
-| Completion | Emit TestFinishedEvent with SUCCESS or FAIL; return to idle. |
-| Accepted AbortTest | End the identified run with ABORTED; return to idle. |
-
-The sample target has one active run. Its sync wait returns control to the input
-loop, so discovery, busy checks, abort, and release remain available while waiting.
-There is no queue, background thread, or preemption of blocking application code.
-Discovery is allowed during a run. Completion clears the active run and pending
-sync before sending the terminal event. A later abort or repeated release returns
-NOT_FOUND. Commands are processed sequentially in input order, resolving
-release/abort races in that order. EOF terminates the process without an extra
-terminal event. There are no retry, timeout, or disconnect-recovery policies.
-
-`TtpProcessMaster.request()` allows one outstanding request and matches the
-response sequence ID, preserving intervening asynchronous events in a deque.
-`receive()` drains those events first. An unrelated nonzero response raises an
-error. The API is single-threaded; it does not support concurrent request callers.
-`execute_test(index, run_id=None, auto_release=True)` yields acceptance and events,
-checks test/run identity, automatically releases sync points by default, and stops
-at the matching terminal event. Set `auto_release=False` to handle sync explicitly
-with `release_sync()` or `abort_test()`. Discovery exposes both `get_manifest()`
-and `get_test_info()`, the latter including `total_steps`.
-
-The host bounds its incoming COBS body to 100 bytes (102-byte frame minus two
-delimiters) and drops oversized frames until a delimiter. The target has the same
-shared frame bound. Host CRC/protobuf exceptions propagate to the caller;
-requests have no receive timeout, and queued events have no fixed count limit.
+The wire schema represents command acceptance, step reports, synchronization
+waits, and terminal results. Scheduling, setup/teardown, command queues, and
+execution state belong to the C harness, not the transmission codec. See
+`../testharness-c/README.md` for the implementation contract and
+`../tzen/README.md` for host orchestration and timeout behavior.
 
 ## Nanopb storage limits
 
@@ -291,27 +252,14 @@ to the frame APIs.
 
 ## Validation and regeneration
 
-From the repository root, with the Python dependencies and gcc available:
-
 ```powershell
 cmd /c ttp\generate_pb_files.bat
-cmd /c ttp\C\build_slave.bat
-python -m ttp.python.master --execute 0
-python -m ttp.python.master --execute 1
 python -m unittest discover -s ttp/tests -v
 ```
 
-The generator recreates both binding sets from the current schema and options.
-The build produces `ttp/C/ttp_slave.exe`; the Python launcher also supports
-`--build`, `--slave-exe`, `--debug-log`, and `--debug-shell`.
-
-Regression tests compile C bridges and the target with warnings treated as errors.
-They cover both directional codecs and message alternatives, boundary-size
-payloads, CRC check vectors, every single-bit change in a representative payload
-and trailer, malformed/truncated frames, discovery, sequence correlation and
-wraparound, run identity, busy and invalid-command errors, sync mismatch/release,
-abort, zero run IDs, and preservation of events while awaiting responses. Corrupt,
-zero-sequence, and oversized requests are verified to leave target execution idle.
-Local sample executions complete through both normal and sync paths. Physical
-transport behavior, hardware tests, and integration of real blocking test
-functions remain unvalidated.
+The generator recreates both language bindings. Codec tests compile a C bridge
+with warnings treated as errors and cover both directions, payload alternatives,
+CRC vectors, single-bit corruption, maximum-size payloads, zero CRC bytes, and
+malformed/truncated frames. Engine tests live in `../testharness-c/tests`; Python
+client tests live in `../tzen/tests`. Live Arduino verification is recorded in
+`../examples/Arduino/verification.md`.

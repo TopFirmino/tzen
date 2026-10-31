@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "generated/ttp.pb.h"
+#include "ttp.pb.h"
 
 #ifdef __cplusplus
 extern "C" {

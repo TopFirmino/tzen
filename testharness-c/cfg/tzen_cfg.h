@@ -37,6 +37,28 @@
 #define TZEN_TH_EXIT_CRITICAL_SECTION_RX_QUEUE() TZEN_TH_EXIT_CRITICAL_SECTION()
 #endif
 
+/* Protect both execution queues and shared worker/control state. For threads
+ * on different cores these hooks must provide cross-core exclusion AND memory
+ * visibility (for example an RTOS mutex or an acquire/release spinlock).
+ * Disabling local interrupts alone does not protect another core. */
+#if defined(TZEN_TH_ENTER_CRITICAL_SECTION_WORKER_QUEUE) != defined(TZEN_TH_EXIT_CRITICAL_SECTION_WORKER_QUEUE)
+#error "Define both TZEN_TH worker queue critical-section hooks or neither"
+#endif
+#ifndef TZEN_TH_ENTER_CRITICAL_SECTION_WORKER_QUEUE
+#define TZEN_TH_ENTER_CRITICAL_SECTION_WORKER_QUEUE() TZEN_TH_ENTER_CRITICAL_SECTION()
+#define TZEN_TH_EXIT_CRITICAL_SECTION_WORKER_QUEUE() TZEN_TH_EXIT_CRITICAL_SECTION()
+#endif
+
+/* Serialize whole transport callback invocations. No queue lock is held here.
+ * Hooks may share the same nonrecursive mutex as the other hook pairs. */
+#if defined(TZEN_TH_ENTER_CRITICAL_SECTION_TX) != defined(TZEN_TH_EXIT_CRITICAL_SECTION_TX)
+#error "Define both TZEN_TH TX critical-section hooks or neither"
+#endif
+#ifndef TZEN_TH_ENTER_CRITICAL_SECTION_TX
+#define TZEN_TH_ENTER_CRITICAL_SECTION_TX() TZEN_TH_ENTER_CRITICAL_SECTION()
+#define TZEN_TH_EXIT_CRITICAL_SECTION_TX() TZEN_TH_EXIT_CRITICAL_SECTION()
+#endif
+
 /* RX ring slots: one slot is reserved; usable queued frames = slots - 1. */
 #ifndef TZEN_TH_RX_SLOTS
 #define TZEN_TH_RX_SLOTS 4U
@@ -60,6 +82,22 @@
 /* Pending executions, in addition to active workers. */
 #ifndef TZEN_TH_WORKER_QUEUE_DEPTH
 #define TZEN_TH_WORKER_QUEUE_DEPTH 4U
+#endif
+
+/* Worker -> main events. Each poll reserves two slots for step/sync/terminal
+ * results before calling user code; logs can use only unreserved capacity. */
+#ifndef TZEN_TH_RESULT_QUEUE_DEPTH
+#define TZEN_TH_RESULT_QUEUE_DEPTH 16U
+#endif
+
+#if TZEN_TH_RX_SLOTS < 2U || TZEN_TH_RX_SLOTS > 256U
+#error "TZEN_TH_RX_SLOTS must be 2..256"
+#endif
+#if TZEN_TH_MAX_WORKERS < 1U || TZEN_TH_MAX_WORKERS > 256U
+#error "TZEN_TH_MAX_WORKERS must be 1..256"
+#endif
+#if TZEN_TH_WORKER_QUEUE_DEPTH < 1U || TZEN_TH_RESULT_QUEUE_DEPTH < 2U
+#error "Worker queue needs at least one slot; result queue needs at least two"
 #endif
 
 /**************************************************************

@@ -120,4 +120,6 @@ message LogEvent {
     }
     Level  level = 1;
     string message = 2;     // In Nanopb .options: max_size = 64
+    uint32 run_id = 3;      // Execution that emitted this log (zero is valid).
+    uint32 test_index = 4;  // Index of the test that emitted this log.
 }

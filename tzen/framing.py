@@ -6,7 +6,7 @@ BytesLike = ttp.BytesLike
 Message = ttp.Message
 TargetToHost = ttp.TargetToHost
 FRAME_DELIMITER = 0
-MAX_FRAME_SIZE = 82
+MAX_FRAME_SIZE = 94  # C TargetToHost_size (89) + CRC, COBS code, delimiters.
 
 
 def cobs_encode(data: BytesLike) -> bytes:

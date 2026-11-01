@@ -8,5 +8,9 @@ void host_exit_critical_section(void);
 #define TZEN_TH_EXIT_CRITICAL_SECTION() host_exit_critical_section()
 #define TZEN_TH_ENTER_CRITICAL_SECTION_RX_QUEUE() host_enter_critical_section()
 #define TZEN_TH_EXIT_CRITICAL_SECTION_RX_QUEUE() host_exit_critical_section()
+#define TZEN_TH_ENTER_CRITICAL_SECTION_WORKER_QUEUE() host_enter_critical_section()
+#define TZEN_TH_EXIT_CRITICAL_SECTION_WORKER_QUEUE() host_exit_critical_section()
+#define TZEN_TH_ENTER_CRITICAL_SECTION_TX() host_enter_critical_section()
+#define TZEN_TH_EXIT_CRITICAL_SECTION_TX() host_exit_critical_section()
 
 #endif

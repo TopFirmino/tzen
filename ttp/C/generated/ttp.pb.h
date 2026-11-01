@@ -114,6 +114,8 @@ typedef struct _TestEvent {
 typedef struct _LogEvent {
     LogEvent_Level level;
     char message[64]; /* In Nanopb .options: max_size = 64 */
+    uint32_t run_id; /* Execution that emitted this log (zero is valid). */
+    uint32_t test_index; /* Index of the test that emitted this log. */
 } LogEvent;
 
 typedef struct _TargetToHost {
@@ -183,7 +185,7 @@ extern "C" {
 #define TestStepEvent_init_default               {0, 0}
 #define SyncWaitEvent_init_default               {0}
 #define TestFinishedEvent_init_default           {_TestFinishedEvent_Status_MIN}
-#define LogEvent_init_default                    {_LogEvent_Level_MIN, ""}
+#define LogEvent_init_default                    {_LogEvent_Level_MIN, "", 0, 0}
 #define HostToTarget_init_zero                   {0, 0, {GetTestsCmd_init_zero}}
 #define TargetToHost_init_zero                   {0, _ResultCode_MIN, 0, {GetTestsResp_init_zero}}
 #define GetTestsCmd_init_zero                    {0}
@@ -197,7 +199,7 @@ extern "C" {
 #define TestStepEvent_init_zero                  {0, 0}
 #define SyncWaitEvent_init_zero                  {0}
 #define TestFinishedEvent_init_zero              {_TestFinishedEvent_Status_MIN}
-#define LogEvent_init_zero                       {_LogEvent_Level_MIN, ""}
+#define LogEvent_init_zero                       {_LogEvent_Level_MIN, "", 0, 0}
 
 /* Field tags (for use in manual encoding/decoding) */
 #define GetTestsResp_total_tests_tag             1
@@ -227,6 +229,8 @@ extern "C" {
 #define TestEvent_finished_tag                   5
 #define LogEvent_level_tag                       1
 #define LogEvent_message_tag                     2
+#define LogEvent_run_id_tag                      3
+#define LogEvent_test_index_tag                  4
 #define TargetToHost_seq_id_tag                  1
 #define TargetToHost_status_tag                  2
 #define TargetToHost_tests_count_tag             3
@@ -333,7 +337,9 @@ X(a, STATIC,   SINGULAR, UENUM,    status,            1)
 
 #define LogEvent_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UENUM,    level,             1) \
-X(a, STATIC,   SINGULAR, STRING,   message,           2)
+X(a, STATIC,   SINGULAR, STRING,   message,           2) \
+X(a, STATIC,   SINGULAR, UINT32,   run_id,            3) \
+X(a, STATIC,   SINGULAR, UINT32,   test_index,        4)
 #define LogEvent_CALLBACK NULL
 #define LogEvent_DEFAULT NULL
 
@@ -376,11 +382,11 @@ extern const pb_msgdesc_t LogEvent_msg;
 #define GetTestsCmd_size                         0
 #define GetTestsResp_size                        6
 #define HostToTarget_size                        20
-#define LogEvent_size                            67
+#define LogEvent_size                            79
 #define SyncReleaseCmd_size                      12
 #define SyncWaitEvent_size                       6
 #define TTP_PB_H_MAX_SIZE                        TargetToHost_size
-#define TargetToHost_size                        77
+#define TargetToHost_size                        89
 #define TestEvent_size                           22
 #define TestFinishedEvent_size                   2
 #define TestStepEvent_size                       8

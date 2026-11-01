@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class NativeEngineTests(unittest.TestCase):
     # The legacy engine/queue/concurrent sources describe the earlier worker
-    # implementation. This runner covers the current RX/TX/discovery stage.
+    # implementation. This runner covers the current API and execution queues.
     def test_rx(self):
         self.build_and_run("test_rx.c")
 
@@ -26,6 +26,14 @@ class NativeEngineTests(unittest.TestCase):
             "examples/Host/C/host_critical_section.h"],
             ["examples/Host/C/main.c", "examples/Host/C/protocol_cases.c",
              "examples/Host/C/host_critical_section.c", "testharness-c/src/tzen.c"])
+
+    def test_workers(self):
+        self.build_and_run("test_workers.c", ["-pthread", "-DTZEN_TH_TEST_WORKERS_CONCURRENT",
+            "-include", "examples/Host/C/host_critical_section.h"],
+            ["examples/Host/C/host_critical_section.c"])
+
+    def test_workers_small(self):
+        self.build_and_run("test_workers.c", ["-DTZEN_TH_MAX_WORKERS=1", "-DTZEN_TH_RESULT_QUEUE_DEPTH=2"])
 
     def build_and_run(self, source, flags=(), extra_sources=()):
         with tempfile.TemporaryDirectory(prefix="tzen_native_") as temp:

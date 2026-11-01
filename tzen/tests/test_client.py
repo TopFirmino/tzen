@@ -31,7 +31,7 @@ class FakeTransport:
         self.push(response)
         if kind == "execute_test":
             self.run_id = command.execute_test.run_id
-            self.push(ttp.TargetToHost(log=ttp.LogEvent(message="hello")))
+            self.push(ttp.TargetToHost(log=ttp.LogEvent(message="hello", run_id=self.run_id)))
             self.push(ttp.TargetToHost(test_event=ttp.TestEvent(
                 run_id=self.run_id, sync=ttp.SyncWaitEvent(sync_id=42))))
         elif kind in ("abort_test", "sync_release"):
@@ -82,3 +82,28 @@ class ClientTests(unittest.TestCase):
         transport.rx.extend(b"\0" + framing.cobs_encode(raw) + b"\0")
         with self.assertRaisesRegex(ValueError, "CRC16 mismatch"):
             Client(transport).receive()
+
+    def test_logs_are_connected_to_execution(self):
+        result = Client(FakeTransport()).run(0)
+        logs = [event.log for event in result.events if event.WhichOneof("payload") == "log"]
+        self.assertTrue(logs)
+        self.assertTrue(all(log.run_id == result.run_id and log.test_index == result.test.index for log in logs))
+
+        class OtherRunLog(FakeTransport):
+            def push(self, message):
+                if message.WhichOneof("payload") == "log":
+                    message.log.run_id = 999
+                super().push(message)
+
+        with self.assertRaisesRegex(RuntimeError, "log belongs to another test run"):
+            Client(OtherRunLog()).run(0)
+
+    def test_maximum_log_frame_with_identity(self):
+        message = ttp.TargetToHost(seq_id=0xFFFFFFFF, status=ttp.RESULT_ERR_INVALID,
+            log=ttp.LogEvent(level=ttp.LogEvent.ERROR, message="x" * 63,
+                run_id=0xFFFFFFFF, test_index=0xFFFFFFFF))
+        self.assertEqual(len(ttp.encode_message(message)), 89)
+        self.assertLessEqual(len(framing.encode_frame(message)), framing.MAX_FRAME_SIZE)
+        transport = FakeTransport()
+        transport.push(message)
+        self.assertEqual(Client(transport).receive(), message)

@@ -32,12 +32,20 @@ test_tx.exe: ../../../testharness-c/tests/test_tx.c ../../../testharness-c/src/t
 test_tx_large.exe: ../../../testharness-c/tests/test_tx.c ../../../testharness-c/src/tzen.c $(CODECS) $(HEADERS)
 	$(CC) $(CPPFLAGS) -DTZEN_TH_MAX_PACKET_SIZE=600 $(CFLAGS) $(LDFLAGS) $< $(CODECS) $(LDLIBS) -o $@
 
-check: $(TARGET) test_rx.exe test_rx_single.exe test_tx.exe test_tx_large.exe
+test_workers.exe: ../../../testharness-c/tests/test_workers.c ../../../testharness-c/src/tzen.c host_critical_section.c $(CODECS) $(HEADERS)
+	$(CC) $(CPPFLAGS) $(HOST_CPPFLAGS) -DTZEN_TH_TEST_WORKERS_CONCURRENT $(CFLAGS) $(THREAD_FLAGS) $(LDFLAGS) $< host_critical_section.c $(CODECS) $(LDLIBS) -o $@
+
+test_workers_small.exe: ../../../testharness-c/tests/test_workers.c ../../../testharness-c/src/tzen.c $(CODECS) $(HEADERS)
+	$(CC) $(CPPFLAGS) -DTZEN_TH_MAX_WORKERS=1 -DTZEN_TH_RESULT_QUEUE_DEPTH=2 $(CFLAGS) $(LDFLAGS) $< $(CODECS) $(LDLIBS) -o $@
+
+check: $(TARGET) test_rx.exe test_rx_single.exe test_tx.exe test_tx_large.exe test_workers.exe test_workers_small.exe
 	./$(TARGET)
 	./test_rx.exe
 	./test_rx_single.exe
 	./test_tx.exe
 	./test_tx_large.exe
+	./test_workers.exe
+	./test_workers_small.exe
 
 clean:
-	$(RM) $(TARGET) test_rx.exe test_rx_single.exe test_tx.exe test_tx_large.exe
+	$(RM) $(TARGET) test_rx.exe test_rx_single.exe test_tx.exe test_tx_large.exe test_workers.exe test_workers_small.exe

@@ -6,6 +6,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
+#include <sched.h>
+#include <time.h>
 
 #define CHECK(expr) do { if (!(expr)) { \
     fprintf(stderr, "Protocol check failed at line %d: %s\n", __LINE__, #expr); \
@@ -13,19 +16,82 @@
 
 #define WIRE_CAPACITY (TZEN_TH_MAX_PACKET_SIZE + TZEN_TH_MAX_PACKET_SIZE / 254U + 3U)
 
-static TzenStepResult_t never_execute(TzenContext_t *ctx)
+static bool test_setup(TzenContext_t *ctx)
 {
-    (void)ctx;
-    fputs("Discovery must not execute a test.\n", stderr);
-    abort();
+    ctx->scratchpad[0] = 0xA5U;
+    (void)tzen_log(ctx, TZEN_LOG_INFO, "Setup");
+    return true;
 }
 
-static const TzenStepFn_t first_steps[] = {never_execute, never_execute};
-static const TzenStepFn_t second_steps[] = {never_execute};
+static void test_teardown(TzenContext_t *ctx, TzenTestStatus_t status)
+{
+    (void)tzen_logf(ctx, TZEN_LOG_INFO, "Teardown: status=%u", (unsigned)status);
+}
+
+static TzenStepResult_t yielding_step(TzenContext_t *ctx)
+{
+    if (ctx->scratchpad[0] != 0xA5U) return TZEN_STEP_FAIL;
+    (void)tzen_logf(ctx, TZEN_LOG_INFO, "Run %lu iteration %lu",
+                   (unsigned long)ctx->run_id, (unsigned long)ctx->step_Iterations);
+    return ctx->step_Iterations < 2U ? TZEN_STEP_YIELD : TZEN_STEP_PASS_NEXT;
+}
+
+static TzenStepResult_t sync_step(TzenContext_t *ctx)
+{
+    tzen_sync(ctx, 42U);
+    return TZEN_STEP_WAIT_SYNC;
+}
+
+static TzenStepResult_t failing_step(TzenContext_t *ctx)
+{
+    (void)tzen_log(ctx, TZEN_LOG_ERROR, "Intentional example failure");
+    return TZEN_STEP_FAIL;
+}
+
+static const TzenStepFn_t first_steps[] = {yielding_step, sync_step};
+static const TzenStepFn_t second_steps[] = {failing_step};
 static const TzenTestDescriptor_t tests[] = {
-    TZEN_TEST_ENTRY("Power rail", first_steps, NULL, NULL),
-    TZEN_TEST_ENTRY("1234567890123456789012345678901", second_steps, NULL, NULL)
+    TZEN_TEST_ENTRY("Power rail", first_steps, test_setup, test_teardown),
+    TZEN_TEST_ENTRY("Expected failure (host example)", second_steps, test_setup, test_teardown)
 };
+
+static struct { unsigned logs, steps, syncs, finished; } observed[3];
+
+static bool observe(const TargetToHost *message)
+{
+    CHECK(message->seq_id == 0U && message->status == ResultCode_RESULT_OK);
+    uint32_t run_id, index;
+    if (message->which_payload == TargetToHost_log_tag) {
+        run_id = message->payload.log.run_id;
+        index = message->payload.log.test_index;
+    } else {
+        CHECK(message->which_payload == TargetToHost_test_event_tag);
+        run_id = message->payload.test_event.run_id;
+        index = message->payload.test_event.test_index;
+    }
+    unsigned slot = run_id == 101U ? 0U : (run_id == 202U ? 1U : 2U);
+    CHECK(run_id == 101U || run_id == 202U || run_id == 303U);
+    CHECK(index == (slot == 1U ? 1U : 0U) && observed[slot].finished == 0U);
+    if (message->which_payload == TargetToHost_log_tag) {
+        ++observed[slot].logs;
+    } else {
+        const TestEvent *event = &message->payload.test_event;
+        if (event->which_event == TestEvent_step_tag) {
+            ++observed[slot].steps;
+            CHECK(event->event.step.step_number == observed[slot].steps);
+            CHECK(event->event.step.success == (slot != 1U));
+        } else if (event->which_event == TestEvent_sync_tag) {
+            CHECK(slot != 1U && event->event.sync.sync_id == 42U);
+            ++observed[slot].syncs;
+        } else {
+            CHECK(event->which_event == TestEvent_finished_tag);
+            CHECK(event->event.finished.status == (slot == 0U ? TestFinishedEvent_Status_SUCCESS :
+                (slot == 1U ? TestFinishedEvent_Status_FAIL : TestFinishedEvent_Status_ABORTED)));
+            ++observed[slot].finished;
+        }
+    }
+    return true;
+}
 
 static uint16_t master_crc(const uint8_t *data, size_t len)
 {
@@ -121,8 +187,18 @@ static bool exchange(FILE *request_file, FILE *reply_file, const uint8_t *payloa
     tzen_th_main_function();
     CHECK(tzen_th_transport_ok());
     CHECK(fflush(reply_file) == 0 && fseek(reply_file, reply_start, SEEK_SET) == 0);
-    if (expect_reply) CHECK(master_read(reply_file, reply));
-    CHECK(fgetc(reply_file) == EOF && !ferror(reply_file));
+    bool got_reply = false;
+    while ((byte = fgetc(reply_file)) != EOF) {
+        CHECK(ungetc(byte, reply_file) != EOF);
+        TargetToHost message = TargetToHost_init_zero;
+        CHECK(master_read(reply_file, &message));
+        if (message.seq_id != 0U) {
+            CHECK(expect_reply && !got_reply);
+            *reply = message;
+            got_reply = true;
+        } else CHECK(observe(&message));
+    }
+    CHECK(got_reply == expect_reply && !ferror(reply_file));
     return true;
 }
 
@@ -138,6 +214,124 @@ static bool request(FILE *tx, FILE *rx, const HostToTarget *command,
         CHECK(reply->status == status && reply->which_payload == payload_tag);
     }
     return true;
+}
+
+static bool stop_workers;
+
+static void *poll_worker(void *arg)
+{
+    uint8_t id = *(uint8_t *)arg;
+    for (;;) {
+        TZEN_TH_ENTER_CRITICAL_SECTION();
+        bool stop = stop_workers;
+        TZEN_TH_EXIT_CRITICAL_SECTION();
+        if (stop) break;
+        tzen_th_worker_main_function(id);
+        sched_yield();
+    }
+    return NULL;
+}
+
+static bool poll_events(FILE *rx)
+{
+    CHECK(fseek(rx, 0L, SEEK_END) == 0);
+    long start = ftell(rx);
+    CHECK(start >= 0L);
+    tzen_th_main_function();
+    CHECK(fflush(rx) == 0 && fseek(rx, start, SEEK_SET) == 0);
+    int byte;
+    while ((byte = fgetc(rx)) != EOF) {
+        CHECK(ungetc(byte, rx) != EOF);
+        TargetToHost message = TargetToHost_init_zero;
+        CHECK(master_read(rx, &message) && observe(&message));
+    }
+    CHECK(!ferror(rx) && tzen_th_transport_ok());
+    return true;
+}
+
+static double monotonic_seconds(void)
+{
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) abort();
+    return (double)now.tv_sec + (double)now.tv_nsec / 1000000000.0;
+}
+
+static bool execution_loop(FILE *tx, FILE *rx)
+{
+    double deadline = monotonic_seconds() + 5.0;
+    bool released = false;
+    TargetToHost reply;
+    while (observed[0].finished == 0U || observed[1].finished == 0U) {
+        CHECK(monotonic_seconds() < deadline);
+        CHECK(poll_events(rx));
+        if (observed[0].syncs != 0U && !released) {
+            HostToTarget release = HostToTarget_init_zero;
+            release.seq_id = 50U;
+            release.which_cmd = HostToTarget_sync_release_tag;
+            release.cmd.sync_release.run_id = 101U;
+            release.cmd.sync_release.sync_id = 99U;
+            CHECK(request(tx, rx, &release, ResultCode_RESULT_ERR_NOT_FOUND, 0U, &reply));
+            release.seq_id++;
+            release.cmd.sync_release.sync_id = 42U;
+            CHECK(request(tx, rx, &release, ResultCode_RESULT_OK, 0U, &reply));
+            released = true;
+        }
+        sched_yield();
+    }
+    CHECK(observed[0].logs != 0U && observed[1].logs != 0U);
+    CHECK(observed[0].steps == 2U && observed[1].steps == 1U && observed[0].syncs == 1U);
+
+    HostToTarget command = HostToTarget_init_zero;
+    command.seq_id = 60U;
+    command.which_cmd = HostToTarget_execute_test_tag;
+    command.cmd.execute_test.run_id = 303U;
+    CHECK(request(tx, rx, &command, ResultCode_RESULT_OK, 0U, &reply));
+    command.seq_id++;
+    command.which_cmd = HostToTarget_abort_test_tag;
+    command.cmd.abort_test.run_id = 303U;
+    CHECK(request(tx, rx, &command, ResultCode_RESULT_OK, 0U, &reply));
+    while (observed[2].finished == 0U) {
+        CHECK(monotonic_seconds() < deadline);
+        CHECK(poll_events(rx));
+        sched_yield();
+    }
+    command.seq_id++;
+    CHECK(request(tx, rx, &command, ResultCode_RESULT_ERR_NOT_FOUND, 0U, &reply));
+    CHECK(tzen_get_state() == TZEN_ENGINE_IDLE);
+    return true;
+}
+
+static bool execution_cases(FILE *tx, FILE *rx, const TzenConfig_t *cfg, unsigned count)
+{
+    CHECK(tzen_th_init(cfg));
+    memset(observed, 0, sizeof(observed));
+    HostToTarget command = HostToTarget_init_zero;
+    TargetToHost reply;
+    command.seq_id = 40U;
+    command.which_cmd = HostToTarget_execute_test_tag;
+    command.cmd.execute_test.run_id = 101U;
+    CHECK(request(tx, rx, &command, ResultCode_RESULT_OK, 0U, &reply));
+    command.seq_id++;
+    CHECK(request(tx, rx, &command, ResultCode_RESULT_ERR_BUSY, 0U, &reply));
+    command.seq_id++;
+    command.cmd.execute_test.run_id = 202U;
+    command.cmd.execute_test.index = 1U;
+    CHECK(request(tx, rx, &command, ResultCode_RESULT_OK, 0U, &reply));
+    CHECK(!tzen_th_init(cfg));
+
+    pthread_t threads[2];
+    uint8_t ids[2] = {0U, 1U};
+    unsigned launched = 0U;
+    stop_workers = false; /* No worker is running yet. */
+    while (launched < count && pthread_create(&threads[launched], NULL, poll_worker, &ids[launched]) == 0)
+        ++launched;
+    bool ok = launched == count && execution_loop(tx, rx);
+    TZEN_TH_ENTER_CRITICAL_SECTION();
+    stop_workers = true;
+    TZEN_TH_EXIT_CRITICAL_SECTION();
+    for (unsigned i = 0U; i < launched; ++i) if (pthread_join(threads[i], NULL) != 0) ok = false;
+    if (ok) printf("Execution checks passed with %u worker thread(s): yield, sync, logs, success, failure and abort.\n", count);
+    return ok;
 }
 
 static bool protocol_cases(FILE *tx, FILE *rx)
@@ -169,11 +363,14 @@ static bool protocol_cases(FILE *tx, FILE *rx)
 
     const pb_size_t unsupported[] = {0U, HostToTarget_execute_test_tag,
         HostToTarget_abort_test_tag, HostToTarget_sync_release_tag};
+    const ResultCode errors[] = {ResultCode_RESULT_ERR_INVALID, ResultCode_RESULT_ERR_INDEX,
+        ResultCode_RESULT_ERR_NOT_FOUND, ResultCode_RESULT_ERR_NOT_FOUND};
     for (size_t i = 0U; i < sizeof(unsupported) / sizeof(unsupported[0]); ++i) {
         command = (HostToTarget)HostToTarget_init_zero;
         command.seq_id = 10U + (uint32_t)i;
         command.which_cmd = unsupported[i];
-        CHECK(request(tx, rx, &command, ResultCode_RESULT_ERR_INVALID, 0U, &reply));
+        if (command.which_cmd == HostToTarget_execute_test_tag) command.cmd.execute_test.index = UINT32_MAX;
+        CHECK(request(tx, rx, &command, errors[i], 0U, &reply));
     }
 
     command.which_cmd = HostToTarget_get_tests_tag;
@@ -206,6 +403,10 @@ static bool protocol_cases(FILE *tx, FILE *rx)
     CHECK(request(tx, rx, &command, ResultCode_RESULT_OK, TargetToHost_tests_count_tag, &reply));
     CHECK(reply.payload.tests_count.total_tests == 2U);
 
+    CHECK(execution_cases(tx, rx, &cfg, 1U));
+#if TZEN_TH_MAX_WORKERS >= 2U
+    CHECK(execution_cases(tx, rx, &cfg, 2U));
+#endif
     cfg.tests = NULL;
     cfg.num_tests = 0U;
     CHECK(tzen_th_init(&cfg));
@@ -215,7 +416,7 @@ static bool protocol_cases(FILE *tx, FILE *rx)
     command.which_cmd = HostToTarget_get_test_info_tag;
     command.cmd.get_test_info.index = 0U;
     CHECK(request(tx, rx, &command, ResultCode_RESULT_ERR_INDEX, 0U, &reply));
-    puts("TTP checks passed: discovery, metadata, errors, silent rejection and recovery; no tests executed.");
+    puts("TTP checks passed: discovery, metadata, execution, errors, silent rejection and recovery.");
     return true;
 }
 

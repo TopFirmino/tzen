@@ -31,17 +31,19 @@ trailing data. These initial sends demonstrate the raw framing API.
 
 `protocol_cases.c` then registers two example test descriptors and exchanges
 actual TTP requests/replies through a second pair of buffered binary temporary
-files. No tests execute: the step callbacks abort if accidentally called.
+files. Two runnable tests are registered: `Power rail` yields, then waits for
+sync ID 42 before succeeding; `Expected failure (host example)` logs a diagnostic
+and deliberately fails. Setup and teardown also emit logs.
 The Master uses the public `Ttp_EncodeHostToTarget` and
 `Ttp_DecodeTargetToHost` APIs and independent framing/CRC code to verify the
 Slave's replies. The Slave uses the public TTP decode/encode APIs internally.
 
 Cases cover test count, both names and step counts (including a 31-byte name),
-out-of-range indices, maximum sequence ID, missing/unknown commands, rejected
-execution/control commands, zero sequence ID, corrupt CRC, malformed protobuf,
+out-of-range indices, maximum sequence ID, missing/unknown commands,
+invalid execution indices, missing runs/syncs, zero sequence ID, corrupt CRC, malformed protobuf,
 recovery after rejection, invalid metadata configuration, and an empty registry.
 Every expected response is checked for sequence ID, status and payload; cases
-expecting silence reject any output. Protocol cases exchange one request at a
+expecting silence reject unexpected command replies. Protocol cases exchange one request at a
 time to avoid intentionally overflowing the bounded RX queue.
 
 ```c
@@ -59,15 +61,15 @@ The harness copies the transport callback and user pointer at initialization;
 the pointed-to transport must remain valid during sends. A NULL callback
 permits RX-only use. TX uses bounded stack storage without heap allocation.
 
-Serialize send callers and calls to `tzen_th_transport_ok`; the RX tasks may
-continue independently. Since main now sends command replies, serialize main
-with other send/status callers too. The callback must not reenter harness APIs.
+Worker threads only enqueue return messages; main drains them and writes frames.
+The TX hooks serialize complete callbacks and the worker-queue hooks protect
+transport status. The callback must not reenter harness APIs.
 A failed callback makes `tzen_th_transport_ok()` false until reinitialization;
 later sends are still allowed and each returns its own result. Invalid send
 arguments or a missing callback return false without invoking the transport
 or changing this status.
 
-The queue supports one producer and one consumer using configurable critical
+The RX queue supports one producer and one consumer using configurable critical
 sections. Initialize before starting either task. Full queues drop new frames;
 the consumer releases slots only after checking the CRC. Private
 `rx_valid_packets` and `rx_invalid_packets` counters in `testharness_state`
@@ -81,13 +83,31 @@ argument rejection, callback failures, sticky status and reinitialization.
 Both default 256-byte and 600-byte decoded capacities are tested to cover
 254-byte COBS block boundaries and multiple full blocks.
 
+The host runs execution scenarios first with one worker thread, then with two
+when `TZEN_TH_MAX_WORKERS >= 2`. Each task polls its own worker ID while main
+continues polling protocol work. Results/logs are decoded from the binary
+return file and checked against the execution ID and test index. The scenarios
+verify yield, sync rejection/release, success, failure, duplicate IDs, and abort.
+
+`test_workers.c` additionally verifies FIFO/full request queues, queued abort
+without lifecycle calls, exactly-once teardown, result queue backpressure, log
+backpressure, invalid step contracts, transport failure cleanup, terminal ID
+reservation, and scratchpad isolation. A barrier forces two callbacks to be
+inside user code simultaneously, then checks abort routing and overlapping
+calls on the same ID. A 1,000-run stress test verifies exactly-once execution
+and completion. A separate build uses one worker and only two result slots.
+
 `TZEN_TH_ENTER_CRITICAL_SECTION()` and `TZEN_TH_EXIT_CRITICAL_SECTION()`
 default to no-ops in `tzen_cfg.h` for serialized calls from one task.
 For concurrent calls, override both hooks with the same synchronization
 mechanism. The host Makefile force-includes `host_critical_section.h` when
 compiling the application and harness; `host_critical_section.c` implements
-the hooks with a shared pthread mutex. CRC computation stays outside the
-critical sections, while the consumer retains ownership of its slot.
+the RX, worker-queue and TX hooks with a shared pthread mutex. They are never
+nested. Queue locks are held only for publication/control changes; user test
+callbacks and protocol encoding run outside them. The TX lock covers the
+transport callback. For different cores, the worker-queue hooks must provide
+mutual exclusion and memory visibility across cores; disabling interrupts on
+one core is insufficient. Defaults are no-ops and support serialized calls only.
 For an interrupt-based port, preserve and restore the prior interrupt state
 and use hooks appropriate for every calling context.
 

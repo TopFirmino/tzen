@@ -1,8 +1,8 @@
 # TTP (Tzen Test Protocol)
 
 This specification describes the current `schema/ttp.proto` and
-`schema/ttp.options`. The current C harness implements discovery only;
-execution/control messages are reserved for a later implementation.
+`schema/ttp.options`. The C harness implements discovery and queued execution
+with independently polled workers; see its README for scheduling and locking.
 
 ## Scope and code layout
 
@@ -123,11 +123,11 @@ schema comments but are not enforced by protobuf encoding.
 | ---: | --- | --- |
 | 0 | RESULT_OK | Command accepted or completed successfully as appropriate. Execution acceptance does not imply that the test passed. |
 | 1 | RESULT_ERR_INDEX | Test index is outside `0 <= index < total_tests`. |
-| 2 | RESULT_ERR_BUSY | A test is already executing. |
+| 2 | RESULT_ERR_BUSY | Request queue is full or this run ID is already queued/active. |
 | 3 | RESULT_ERR_NOT_FOUND | No corresponding active test/run or synchronization point exists. |
 | 4 | RESULT_ERR_INVALID | Command is invalid in the current state. |
 
-The sample target checks BUSY before index validity on execution. Abort and
+The target checks transport validity, then BUSY, then index validity on execution. Abort and
 release return NOT_FOUND for a missing run or mismatched identity; release also
 requires a pending matching sync point. Unset/unknown commands return INVALID.
 There is no command error text field; LogEvent has no sequence correlation.
@@ -141,15 +141,15 @@ Field numbers here are local to each nested message.
 | GetTestsCmd | None | Requests how many tests are registered. |
 | GetTestsResp | `1: total_tests: uint32` | Returns the count; zero represents an empty registry. |
 | GetTestInfoCmd | `1: index: uint32` | Selects a test by zero-based index. |
-| GetTestInfoResp | `1: index: uint32`, `2: name: string`, `3: total_steps: uint32` | Returns index, display name, and step count for progress reporting. Meaning of a zero/unknown step count is not specified. |
+| GetTestInfoResp | `1: index: uint32`, `2: name: string`, `3: total_steps: uint32` | Returns index, display name, and step count for progress reporting. Zero-step descriptors are discoverable but cannot execute in the current harness. |
 | ExecuteTestCmd | `1: index: uint32`, `2: run_id: uint32` | Selects a test and assigns a host-chosen run ID for subsequent events. |
 | AbortTestCmd | `1: run_id: uint32` | Requests abort of the matching run; the schema provides ABORTED as its terminal result. The sample acknowledges abort then emits ABORTED and clears the active state. |
 | SyncReleaseCmd | `1: run_id: uint32`, `2: sync_id: uint32` | Identifies both the run and synchronization point to resume. |
 
 `seq_id` identifies one command/response exchange. `run_id` identifies an execution
 across multiple commands and events; for example, execute and abort have different
-sequence IDs but may refer to the same run. The sample accepts any uint32 run ID, including zero, and
-permits reuse after completion. The Python execution iterator allocates increasing
+sequence IDs but may refer to the same run. The harness accepts any uint32 run ID, including zero, and
+permits reuse after the terminal transport attempt. The Python execution iterator allocates increasing
 nonzero run IDs by default, or accepts an explicit ID. There is no run history or
 duplicate suppression. Receivers must not infer the run ID from the sequence ID
 or test index.
@@ -174,11 +174,13 @@ identity for all three alternatives.
 | TestStepEvent | `1: step_number: uint32`, `2: success: bool` | Reports a completed step outcome. The engine emits it automatically; explanatory text uses LogEvent. The sample emits steps 1 and 2; failure policy for real tests remains application-specific. |
 | SyncWaitEvent | `1: sync_id: uint32` | Announces that the run is waiting until released with the matching run ID and sync ID. The sample uses sync ID 1 and has no wait timeout. |
 | TestFinishedEvent | `1: status: Status` | Reports `SUCCESS=0`, `FAIL=1`, or `ABORTED=2`. This result is separate from command acceptance. |
-| LogEvent | `1: level: Level`, `2: message: string` | Reports `INFO=0`, `WARNING=1`, or `ERROR=2` and diagnostic text. |
+| LogEvent | `1: level: Level`, `2: message: string`, `3: run_id: uint32`, `4: test_index: uint32` | Reports `INFO=0`, `WARNING=1`, or `ERROR=2`, diagnostic text and execution identity. |
 
-`LogEvent` is directly inside `TargetToHost`, outside `TestEvent`; it has no
-`run_id`, `test_index`, or timestamp. Logs cannot be explicitly assigned to a
-run from their fields alone.
+`LogEvent` is directly inside `TargetToHost`, outside `TestEvent`. Its new
+`run_id` (tag 3) and `test_index` (tag 4) identify the originating execution,
+including logs from setup and teardown. There is no timestamp. Zero is a valid
+run ID, not a global-log marker. The new scalar fields preserve previous tags;
+older decoders may ignore them, but peers must update their receive bounds.
 
 ## Message flow examples
 
@@ -213,8 +215,8 @@ without response data or a new completion event.
 `TestStepEvent` tag 3 and the name `description` are reserved. They must not be
 reused. Explanatory text belongs in `LogEvent.message`. Older step descriptions
 are ignored as unknown fields by regenerated receivers, subject to frame bounds.
-Deploy the regenerated host and firmware together because maximum frame sizes
-have decreased.
+Deploy regenerated host and firmware together to include execution identities
+in logs and the updated maximum frame bound.
 
 ## Execution semantics
 
@@ -247,18 +249,19 @@ for both strings and these maximum encoded sizes:
 | Message | Maximum protobuf bytes |
 | --- | ---: |
 | HostToTarget | 20 |
-| TargetToHost | 77 |
+| TargetToHost | 89 |
 | TestEvent | 22 |
 | TestStepEvent | 8 |
-| LogEvent | 67 |
+| LogEvent | 79 |
 | GetTestInfoResp | 45 |
 
 These are bounds, not fixed lengths. With two CRC bytes, the frame-size bound is
 `(N + 2) + floor((N + 2) / 254) + 3`, including both delimiters. Allocate
-25 bytes for a framed HostToTarget and 82 bytes for a framed TargetToHost.
-The C shared buffer macros use the larger envelope bound (77 protobuf bytes),
-giving a 79-byte decoded frame payload and an 82-byte complete frame bound. Raw protobuf encode/decode APIs do not add or check a CRC; CRC applies
-to the frame APIs.
+25 bytes for a framed HostToTarget and 94 bytes for a framed TargetToHost.
+The C `TTP_MAX_MESSAGE_SIZE` macro uses the larger envelope bound (89 protobuf
+bytes). The harness adds two CRC bytes, giving a 91-byte decoded payload and
+a 94-byte complete frame bound. TTP encode/decode APIs do not add or check CRC;
+framing belongs to the harness.
 
 ## Validation and regeneration
 
@@ -269,7 +272,7 @@ python -m unittest discover -s ttp/tests -v
 
 The generator recreates both language bindings. Codec tests compile a C bridge
 with warnings treated as errors and cover both directions, payload alternatives,
-CRC vectors, single-bit corruption, maximum-size payloads, zero CRC bytes, and
-malformed/truncated frames. Engine tests live in `../testharness-c/tests`; Python
-client tests live in `../tzen/tests`. Live Arduino verification is recorded in
+maximum-size messages, small encode buffers and malformed protobuf. Framing,
+CRC, worker queues and lifecycle tests live in `../testharness-c/tests`; Python
+framing/client tests live in `../tzen/tests`. Live Arduino verification is recorded in
 `../examples/Arduino/verification.md`.

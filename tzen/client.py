@@ -174,6 +174,11 @@ class Client:
                             self.release(run_id, execution.sync.sync_id)
                         else:
                             self.abort(run_id)
+                elif event.WhichOneof("payload") == "log":
+                    if event.log.run_id != run_id or event.log.test_index != info.index:
+                        raise RuntimeError("log belongs to another test run")
+                    if on_event:
+                        on_event(event)
                 elif on_event:
                     on_event(event)
         except BaseException:

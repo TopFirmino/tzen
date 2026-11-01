@@ -97,7 +97,7 @@ int main(void)
     }
     tzen_th_main_function(); /* Drain packets queued before completion. */
 
-    /* Send explicitly: RX command dispatch/automatic replies are not added yet.
+    /* Exercise raw TX separately from the command/worker cases below.
      * Include a zero payload to verify COBS escaping as well as the CRC vector. */
     const uint8_t zero_payload[] = {0U};
     const uint8_t zero_frame[] = {0U, 1U, 3U, 0xE1U, 0xF0U, 0U};

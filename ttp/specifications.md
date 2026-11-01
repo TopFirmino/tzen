@@ -1,12 +1,13 @@
 # TTP (Tzen Test Protocol)
 
 This specification describes the current `schema/ttp.proto` and
-`schema/ttp.options` as of 2026-10-31. Execution behavior is documented in the harness and Arduino example.
+`schema/ttp.options`. The current C harness implements discovery only;
+execution/control messages are reserved for a later implementation.
 
 ## Scope and code layout
 
 `ttp` contains transmission protocol code only: schema/options, generated bindings,
-C protobuf/COBS/CRC codecs in `C/src` with headers in `C/inc`, and Python codecs
+C protobuf codecs in `C/src` with headers in `C/inc`, and Python protobuf codecs
 and message constructors in `python`. Include both `C/inc` and `C/generated`,
 as well as nanopb headers, when building C code.
 
@@ -16,10 +17,12 @@ The runnable Arduino firmware and Python example belong to `../examples/Arduino`
 
 Both bindings use the package-less schema. The C codec APIs are
 `Ttp_EncodeHostToTarget`, `Ttp_DecodeHostToTarget`, `Ttp_EncodeTargetToHost`, and
-`Ttp_DecodeTargetToHost`, plus corresponding `...Frame` APIs. Raw APIs handle
-protobuf only; frame APIs add or verify CRC and COBS. Ignore output on decoder
-errors. Python `decode_message` and `decode_frame` default to `TargetToHost` and
-accept `HostToTarget` as their second argument. Message constructors build data;
+`Ttp_DecodeTargetToHost`. These APIs handle protobuf only. The former `...Frame`
+and `Ttp_DecodeHostToTargetPayload` APIs and framing-size constants were removed.
+Ignore output on decoder errors. Python `decode_message` defaults to `TargetToHost`
+and accepts `HostToTarget` as its second argument. Python `encode_frame`,
+`decode_frame`, COBS helpers and `MAX_FRAME_SIZE` now live in `tzen.framing`.
+The C harness owns COBS/CRC directly in `tzen.c`. Message constructors build data;
 command execution and response correlation are implemented outside this folder.
 
 The new schema is wire incompatible with the previous envelope: message tags,
@@ -56,8 +59,8 @@ field, so no schema or nanopb options change is needed.
 
 Receivers split the stream on zero delimiters, COBS-decode the body, require
 at least two decoded bytes, verify and remove the CRC trailer, and only then
-parse protobuf. A CRC mismatch returns `TTP_STATUS_CRC_FAILED` in C and raises
-`ValueError("CRC16 mismatch")` in Python. Missing trailers and malformed COBS
+parse protobuf. The C harness discards CRC mismatches; Python harness framing raises
+`ValueError("CRC16 mismatch")`. Missing trailers and malformed COBS
 are framing errors. Rejected frames must not reach command dispatch. The
 harness rejects malformed/CRC-invalid frames without a response because the
 request sequence ID cannot be trusted.
@@ -69,7 +72,7 @@ messages on a stream; its internal length fields apply to individual fields.
 CRC detects accidental corruption with a finite probability of undetected errors;
 it is not an absolute correctness guarantee or authentication mechanism.
 
-Both C and Python codecs enforce this CRC framing on both directional envelopes.
+The C harness and Python `tzen.framing` enforce this CRC framing on both directional envelopes.
 CRC-less frames are no longer supported. There is no schema-defined timestamp, retry mechanism,
 timeout, or transport configuration.
 

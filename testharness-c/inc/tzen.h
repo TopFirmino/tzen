@@ -125,7 +125,7 @@ typedef void (*TzenTeardownFn_t)(TzenContext_t *ctx,
                                  TzenTestStatus_t final_status);
 /** Send one complete frame, including both zero delimiters. Return true only
  * after consuming/copying all bytes. The frame pointer expires on return.
- * Do not reenter init/send from this callback. */
+ * Do not reenter harness APIs from this callback. */
 typedef bool (*TzenSendBytesFn_t)(const uint8_t *frame, size_t len,
                                   void *user_data);
 typedef uint32_t (*TzenGetUsFn_t)(void *user_data);
@@ -174,8 +174,8 @@ typedef struct {
   /* User data passed to callbacks. */
   void *user_data;
 
-  /* Static test table and number of entries. */
-  TzenTestDescriptor_t *tests;
+  /* Static metadata table. Keep the table/names valid and unchanged until reinit. */
+  const TzenTestDescriptor_t *tests;
   size_t num_tests;
 
 } TzenConfig_t;
@@ -186,7 +186,9 @@ typedef struct {
 
 /**
  * Reset RX and transport status. Returns false if cfg is NULL.
- * Copies send_bytes and user_data; cfg need not remain alive afterward.
+ * Copies transport settings and the table pointer/count; cfg may expire.
+ * Rejects a missing nonempty table, count above UINT32_MAX, NULL names, or
+ * names longer than 31 bytes. Empty tables/names are permitted.
  * Test execution and get_us are not used yet. Call with all callers stopped.
  */
 bool tzen_th_init(const TzenConfig_t *cfg);
@@ -225,7 +227,11 @@ void tzen_th_feed_b(uint8_t byte);
  * Process up to TZEN_TH_RX_SLOTS - 1 queued packets per call.
  * Verify CRC-16/CCITT-FALSE over the payload, excluding the final two CRC
  * bytes (high byte first). Missing or invalid CRC trailers are discarded
- * without a response. Valid packets are consumed; dispatch is not added yet.
+ * without a response. Decode protobuf using the public TTP API after CRC.
+ * Malformed protobuf and sequence ID zero receive no reply. GetTests and
+ * GetTestInfo return metadata; invalid indices return ERR_INDEX. All other
+ * commands (including execution/control) return ERR_INVALID with no payload.
+ * Main may send replies: serialize it with other send/status callers.
  * Call from one consumer task only; it may run concurrently with feed_b.
  */
 void tzen_th_main_function(void);

@@ -6,6 +6,8 @@
 */
 
 #include "tzen.h"
+#include "ttp.h"
+#include <string.h>
 
 
 /*
@@ -17,6 +19,8 @@ static struct tzen_state_s {
     TzenSendBytesFn_t send_bytes;
     void *user_data;
     bool transport_ok;
+    const TzenTestDescriptor_t *tests;
+    size_t num_tests;
     struct rx_queue {
         struct {
             /* Decoded payload, including CRC bytes; excludes COBS framing. */
@@ -44,10 +48,21 @@ static struct tzen_state_s {
  * Initialization requires the producer and consumer to be stopped. */
 bool tzen_th_init(const TzenConfig_t *cfg)
 {
-    if (cfg == NULL) {
+    if (cfg == NULL || (cfg->num_tests != 0U && cfg->tests == NULL) ||
+        cfg->num_tests > UINT32_MAX) {
         return false;
     }
+    /* Reject names that cannot be represented without truncation on the wire.
+     * No execution callbacks are inspected or called at this stage. */
+    for (size_t i = 0U; i < cfg->num_tests; ++i) {
+        if (cfg->tests[i].name == NULL) return false;
+        size_t len = 0U;
+        while (len < sizeof(((GetTestInfoResp *)0)->name) && cfg->tests[i].name[len] != '\0') ++len;
+        if (len == sizeof(((GetTestInfoResp *)0)->name)) return false;
+    }
 
+    testharness_state.tests = cfg->tests;
+    testharness_state.num_tests = cfg->num_tests;
     testharness_state.send_bytes = cfg->send_bytes;
     testharness_state.user_data = cfg->user_data;
     testharness_state.transport_ok = true;
@@ -180,6 +195,45 @@ bool tzen_th_transport_ok(void)
     return testharness_state.transport_ok;
 }
 
+static void tzen_th_dispatch(const uint8_t *payload, size_t len)
+{
+    HostToTarget command = HostToTarget_init_zero;
+    TargetToHost response = TargetToHost_init_zero;
+    uint8_t encoded[TTP_MAX_MESSAGE_SIZE];
+    size_t encoded_len = 0U;
+
+    if (Ttp_DecodeHostToTarget(&command, payload, len) != TTP_STATUS_OK || command.seq_id == 0U) {
+        return;
+    }
+    response.seq_id = command.seq_id;
+    switch (command.which_cmd) {
+    case HostToTarget_get_tests_tag:
+        response.which_payload = TargetToHost_tests_count_tag;
+        response.payload.tests_count.total_tests = (uint32_t)testharness_state.num_tests;
+        break;
+    case HostToTarget_get_test_info_tag: {
+        uint32_t index = command.cmd.get_test_info.index;
+        if (index >= testharness_state.num_tests) {
+            response.status = ResultCode_RESULT_ERR_INDEX;
+            break;
+        }
+        const TzenTestDescriptor_t *test = &testharness_state.tests[index];
+        response.which_payload = TargetToHost_test_info_tag;
+        response.payload.test_info.index = index;
+        response.payload.test_info.total_steps = test->num_steps;
+        memcpy(response.payload.test_info.name, test->name, strlen(test->name) + 1U);
+        break;
+    }
+    default:
+        /* Execution/control support will be added with the worker engine. */
+        response.status = ResultCode_RESULT_ERR_INVALID;
+        break;
+    }
+    if (Ttp_EncodeTargetToHost(&response, encoded, sizeof(encoded), &encoded_len) == TTP_STATUS_OK) {
+        (void)tzen_th_send_packet(encoded, encoded_len);
+    }
+}
+
 void tzen_th_main_function(void)
 {
     uint8_t read_idx = testharness_state.rx_queue.read_idx;
@@ -207,7 +261,7 @@ void tzen_th_main_function(void)
 
         if (valid) {
             ++testharness_state.rx_valid_packets;
-            /* Valid payload processing will be added here. */
+            tzen_th_dispatch(data, len - 2U);
         } else {
             ++testharness_state.rx_invalid_packets;
         }

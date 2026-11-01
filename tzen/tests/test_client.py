@@ -2,6 +2,7 @@ from collections import deque
 import unittest
 from tzen import Client, CommandError
 from ttp.python import ttp
+from tzen import framing
 
 
 class FakeTransport:
@@ -11,13 +12,13 @@ class FakeTransport:
         self.closed = False
 
     def push(self, message):
-        self.rx.extend(ttp.encode_frame(message))
+        self.rx.extend(framing.encode_frame(message))
 
     def read(self, size):
         return bytes([self.rx.popleft()]) if self.rx else b""
 
     def write(self, frame):
-        command = ttp.decode_frame(frame[1:-1], ttp.HostToTarget)
+        command = framing.decode_frame(frame[1:-1], ttp.HostToTarget)
         self.commands.append(command)
         response = ttp.TargetToHost(seq_id=command.seq_id)
         kind = command.WhichOneof("cmd")
@@ -76,8 +77,8 @@ class ClientTests(unittest.TestCase):
 
     def test_corruption_rejected(self):
         transport = FakeTransport()
-        raw = bytearray(ttp.cobs_decode(ttp.encode_frame(ttp.TargetToHost(seq_id=1))[1:-1]))
+        raw = bytearray(framing.cobs_decode(framing.encode_frame(ttp.TargetToHost(seq_id=1))[1:-1]))
         raw[-1] ^= 1
-        transport.rx.extend(b"\0" + ttp.cobs_encode(raw) + b"\0")
+        transport.rx.extend(b"\0" + framing.cobs_encode(raw) + b"\0")
         with self.assertRaisesRegex(ValueError, "CRC16 mismatch"):
             Client(transport).receive()

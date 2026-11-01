@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+bool host_protocol_cases(void);
+
 static bool producer_done;
 static bool producer_ok;
 
@@ -116,6 +118,7 @@ int main(void)
         goto cleanup;
     }
     puts("Master/Slave buffered binary transfers passed: RX completed; TX COBS/CRC bytes verified.");
+    if (!host_protocol_cases()) goto cleanup;
     result = EXIT_SUCCESS;
 
 cleanup:

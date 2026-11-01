@@ -1,4 +1,4 @@
-"""Byte transports used by the harness client; protocol codecs live in ttp."""
+"""Byte transports used by the harness client; protobuf codecs live in ttp; framing lives in tzen."""
 import time
 
 

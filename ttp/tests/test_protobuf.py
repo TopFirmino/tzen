@@ -1,62 +1,70 @@
-"""CRC framing regression tests. Run: python -m unittest discover -s ttp/tests -v"""
+"""Public C/Python protobuf interoperability tests."""
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from google.protobuf.message import DecodeError
 
 from ttp.python import ttp
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-class CrcFramingTests(unittest.TestCase):
+class ProtobufTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.temp = tempfile.TemporaryDirectory(prefix='ttp_crc_')
+        cls.temp = tempfile.TemporaryDirectory(prefix='ttp_protobuf_')
         cls.addClassCleanup(cls.temp.cleanup)
         folder = Path(cls.temp.name)
-        harness = folder / 'crc_bridge.c'
+        harness = folder / 'protobuf_bridge.c'
         harness.write_text(r'''
 #include <assert.h>
 #include <stdio.h>
-#include "../src/ttp.c"
+#include "ttp.h"
 int main(int argc, char **argv) {
-    uint8_t body[TTP_MAX_FRAME_SIZE], frame[TTP_MAX_FRAME_SIZE];
+    uint8_t body[TTP_MAX_MESSAGE_SIZE], frame[TTP_MAX_MESSAGE_SIZE];
     size_t length = 0, size = 0, i;
     unsigned int value;
     HostToTarget host;
     TargetToHost target;
     Ttp_Status_t status;
-    assert(crc16((const uint8_t *)"123456789", 9) == 0x29B1);
     assert(argc == 3);
+    size = 123;
+    assert(Ttp_EncodeHostToTarget(NULL, body, sizeof(body), &size) == TTP_STATUS_INVALID_ARGUMENT);
+    assert(size == 0);
+    assert(Ttp_EncodeTargetToHost(NULL, body, sizeof(body), &size) == TTP_STATUS_INVALID_ARGUMENT);
+    assert(Ttp_DecodeHostToTarget(NULL, body, 0) == TTP_STATUS_INVALID_ARGUMENT);
+    assert(Ttp_DecodeTargetToHost(&target, NULL, 0) == TTP_STATUS_INVALID_ARGUMENT);
     while (argv[1][length * 2] != '\0') {
         assert(length < sizeof(body));
         assert(sscanf(argv[1] + length * 2, "%2x", &value) == 1);
         body[length++] = (uint8_t)value;
     }
     status = argv[2][0] == 'h'
-        ? Ttp_DecodeHostToTargetFrame(&host, body, length)
-        : Ttp_DecodeTargetToHostFrame(&target, body, length);
+        ? Ttp_DecodeHostToTarget(&host, body, length)
+        : Ttp_DecodeTargetToHost(&target, body, length);
     printf("%d\n", (int)status);
     if (status == TTP_STATUS_OK) {
         assert((argv[2][0] == 'h'
-            ? Ttp_EncodeHostToTargetFrame(&host, frame, sizeof(frame), &size)
-            : Ttp_EncodeTargetToHostFrame(&target, frame, sizeof(frame), &size)) == TTP_STATUS_OK);
+            ? Ttp_EncodeHostToTarget(&host, frame, sizeof(frame), &size)
+            : Ttp_EncodeTargetToHost(&target, frame, sizeof(frame), &size)) == TTP_STATUS_OK);
         for (i = 0; i < size; i++) printf("%02x", frame[i]);
         printf("\n");
+        if (size > 0) {
         assert((argv[2][0] == 'h'
-            ? Ttp_EncodeHostToTargetFrame(&host, frame, size - 1, &size)
-            : Ttp_EncodeTargetToHostFrame(&target, frame, size - 1, &size)) != TTP_STATUS_OK);
+            ? Ttp_EncodeHostToTarget(&host, frame, size - 1, &size)
+            : Ttp_EncodeTargetToHost(&target, frame, size - 1, &size)) != TTP_STATUS_OK);
         assert(size == 0);
+        }
     }
     return 0;
 }
 ''')
-        cls.exe = folder / 'crc_bridge.exe'
+        cls.exe = folder / 'protobuf_bridge.exe'
         subprocess.run(['gcc', '-std=c99', '-Wall', '-Wextra', '-Werror',
                         '-I', str(ROOT / 'ttp/C/inc'), '-I', str(ROOT / 'ttp/C/generated'),
                         '-I', str(ROOT / 'nanopb'),
-                        str(harness), str(ROOT / 'ttp/C/generated/ttp.pb.c'),
+                        str(harness), str(ROOT / 'ttp/C/src/ttp.c'), str(ROOT / 'ttp/C/generated/ttp.pb.c'),
                         *[str(ROOT / 'nanopb' / p) for p in
                           ('pb_common.c', 'pb_decode.c', 'pb_encode.c')],
                         '-o', str(cls.exe)], check=True)
@@ -64,12 +72,9 @@ int main(int argc, char **argv) {
     def bridge(self, body, direction="host"):
         return subprocess.check_output([str(self.exe), body.hex(), direction], text=True).splitlines()
 
-    def test_interoperability_and_zero_crc_bytes(self):
-        zero_crc_message = next(
-            ttp.make_get_test_info(i) for i in range(65536)
-            if 0 in ttp.cobs_decode(ttp.encode_frame(ttp.make_get_test_info(i))[1:-1])[-2:])
+    def test_interoperability(self):
         messages = [ttp.HostToTarget(), ttp.make_get_tests(),
-                    zero_crc_message, ttp.make_execute_test(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF),
+                    ttp.make_get_test_info(123), ttp.make_execute_test(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF),
                     ttp.make_abort_test(1), ttp.make_sync_release(1, 1),
                     ttp.TargetToHost(),
                     ttp.TargetToHost(seq_id=1, status=ttp.RESULT_ERR_BUSY),
@@ -83,38 +88,16 @@ int main(int argc, char **argv) {
                     ttp.TargetToHost(test_event=ttp.TestEvent(run_id=1, sync=ttp.SyncWaitEvent(sync_id=1))),
                     ttp.TargetToHost(test_event=ttp.TestEvent(run_id=1,
                         finished=ttp.TestFinishedEvent(status=ttp.TestFinishedEvent.ABORTED)))]
-        saw_zero = False
         for message in messages:
-            frame = ttp.encode_frame(message)
-            body = frame[1:-1]
-            self.assertNotIn(0, body)
-            raw = ttp.cobs_decode(body)
-            saw_zero |= 0 in raw[-2:]
-            self.assertEqual(ttp.decode_frame(body, type(message)), message)
-            self.assertEqual(self.bridge(body, 'host' if isinstance(message, ttp.HostToTarget) else 'target'), ['0', frame.hex()])
-        self.assertTrue(saw_zero)
+            payload = ttp.encode_message(message)
+            self.assertEqual(ttp.decode_message(payload, type(message)), message)
+            self.assertEqual(self.bridge(payload, 'host' if isinstance(message, ttp.HostToTarget) else 'target'), ['0', payload.hex()])
 
-    def test_every_single_bit_corruption(self):
-        frame = ttp.encode_frame(ttp.make_execute_test(123, 1))
-        raw = ttp.cobs_decode(frame[1:-1])
-        for index in range(len(raw)):
-            for bit in range(8):
-                damaged = bytearray(raw)
-                damaged[index] ^= 1 << bit
-                body = ttp.cobs_encode(damaged)
-                with self.assertRaisesRegex(ValueError, 'CRC16 mismatch'):
-                    ttp.decode_frame(body)
-                self.assertEqual(self.bridge(body), ['6'])  # TTP_STATUS_CRC_FAILED
-
-    def test_missing_truncated_and_malformed_frames(self):
-        raw = ttp.cobs_decode(ttp.encode_frame(ttp.make_get_test_info(123))[1:-1])
-        bodies = [b'', b'\x00', b'\x03\x01', b'\x02\x00',
-                  ttp.cobs_encode(b'\x01'), ttp.cobs_encode(raw[:-1]),
-                  ttp.cobs_encode(raw[:-2])]
-        for body in bodies:
-            with self.assertRaises(ValueError):
-                ttp.decode_frame(body)
-            self.assertNotEqual(self.bridge(body)[0], '0')
+    def test_malformed_protobuf(self):
+        for payload in (b'\x08\x80', b'\x12\x05', b'\x00'):
+            with self.assertRaises(DecodeError):
+                ttp.decode_message(payload)
+            self.assertEqual(self.bridge(payload)[0], '4')
 
 
 if __name__ == '__main__':

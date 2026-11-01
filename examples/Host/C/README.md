@@ -27,8 +27,22 @@ The Slave then calls `tzen_th_send_packet` with `123456789` and a zero-byte
 payload. Its configured `send_bytes` callback writes each complete framed
 packet in one `fwrite` call to the Slave-to-Master stream. The Master verifies
 the exact expected frame bytes, including COBS, CRC and delimiters, and rejects
-trailing data. These sends are explicit demonstration traffic; command dispatch
-and automatic replies are not implemented yet.
+trailing data. These initial sends demonstrate the raw framing API.
+
+`protocol_cases.c` then registers two example test descriptors and exchanges
+actual TTP requests/replies through a second pair of buffered binary temporary
+files. No tests execute: the step callbacks abort if accidentally called.
+The Master uses the public `Ttp_EncodeHostToTarget` and
+`Ttp_DecodeTargetToHost` APIs and independent framing/CRC code to verify the
+Slave's replies. The Slave uses the public TTP decode/encode APIs internally.
+
+Cases cover test count, both names and step counts (including a 31-byte name),
+out-of-range indices, maximum sequence ID, missing/unknown commands, rejected
+execution/control commands, zero sequence ID, corrupt CRC, malformed protobuf,
+recovery after rejection, invalid metadata configuration, and an empty registry.
+Every expected response is checked for sequence ID, status and payload; cases
+expecting silence reject any output. Protocol cases exchange one request at a
+time to avoid intentionally overflowing the bounded RX queue.
 
 ```c
 TzenConfig_t cfg = {.send_bytes = my_send_frame, .user_data = my_transport};
@@ -46,7 +60,8 @@ the pointed-to transport must remain valid during sends. A NULL callback
 permits RX-only use. TX uses bounded stack storage without heap allocation.
 
 Serialize send callers and calls to `tzen_th_transport_ok`; the RX tasks may
-continue independently. The callback must not reenter send or initialization.
+continue independently. Since main now sends command replies, serialize main
+with other send/status callers too. The callback must not reenter harness APIs.
 A failed callback makes `tzen_th_transport_ok()` false until reinitialization;
 later sends are still allowed and each returns its own result. Invalid send
 arguments or a missing callback return false without invoking the transport
@@ -57,7 +72,7 @@ sections. Initialize before starting either task. Full queues drop new frames;
 the consumer releases slots only after checking the CRC. Private
 `rx_valid_packets` and `rx_invalid_packets` counters in `testharness_state`
 can be inspected in a debugger while the tasks are stopped. The `check`
-target runs the host transfer example, verifies RX CRC outcomes, queue reuse,
+target runs the host transfer and protocol examples, verifies RX CRC outcomes, queue reuse,
 malformed frames and concurrent reception, plus a build with default no-op
 hooks. TX tests use independent COBS decoding and CRC verification, check a
 known wire vector, empty/zero payloads, all permitted lengths, and all two-byte

@@ -2,6 +2,7 @@
 import argparse
 from tzen import Client
 from ttp.python import ttp
+from tzen import framing
 
 
 def show(event):
@@ -54,9 +55,9 @@ def main():
             event = client.receive()
             assert event.test_event.finished.status == ttp.TestFinishedEvent.ABORTED
             # A CRC-damaged execute must not reach the harness.
-            raw = bytearray(ttp.cobs_decode(ttp.encode_frame(ttp.make_execute_test(1, 999, seq_id=999))[1:-1]))
+            raw = bytearray(framing.cobs_decode(framing.encode_frame(ttp.make_execute_test(1, 999, seq_id=999))[1:-1]))
             raw[-1] ^= 1
-            client.transport.write(b"\x00" + ttp.cobs_encode(raw) + b"\x00")
+            client.transport.write(b"\x00" + framing.cobs_encode(raw) + b"\x00")
             # Aborting during a yielded step also has to run teardown.
             run_id = client.start(0)
             client.abort(run_id)

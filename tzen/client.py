@@ -3,6 +3,7 @@ from collections import deque
 from dataclasses import dataclass
 import time
 from ttp.python import ttp
+from tzen import framing
 
 
 class CommandError(RuntimeError):
@@ -73,9 +74,9 @@ class Client:
                 self._dropping = False
                 self._frame.clear()
                 if body:
-                    return ttp.decode_frame(body, ttp.TargetToHost)
+                    return framing.decode_frame(body, ttp.TargetToHost)
             elif self._in_frame and not self._dropping:
-                if len(self._frame) >= ttp.MAX_FRAME_SIZE - 2:
+                if len(self._frame) >= framing.MAX_FRAME_SIZE - 2:
                     self._dropping = True
                     self._frame.clear()
                 else:
@@ -87,7 +88,7 @@ class Client:
             raise TypeError("expected HostToTarget command")
         command.seq_id = self._seq
         self._seq = self._seq % 0xFFFFFFFF + 1
-        self.transport.write(ttp.encode_frame(command))
+        self.transport.write(framing.encode_frame(command))
         deadline = time.monotonic() + self.timeout
         while True:
             response = self._wire(deadline)

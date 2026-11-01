@@ -13,20 +13,58 @@ The Makefile compiles `main.c` and the existing `testharness-c/src/tzen.c`
 directly, using the project's headers. No harness sources are copied.
 `tzen_codex.c` is the old implementation and is excluded.
 
-After `tzen_th_init`, a producer thread feeds COBS frames byte by byte using
-`tzen_th_feed_b`. The main thread calls `tzen_th_main_function` concurrently
-and drains remaining packets after joining the producer. The frames contain
-the standard CRC vector `123456789` with CRC `0x29B1`, then a corrupt CRC.
-Command decoding and test execution are not implemented yet.
+Two buffered binary `tmpfile()` streams simulate Master-to-Slave and
+Slave-to-Master transfers. They are flushed and repositioned before reading,
+closed on completion, and automatically removed. Each stream has one owner
+at a time; no file is read and written concurrently.
+
+The Master writes the standard CRC vector `123456789` (CRC `0x29B1`), then a
+corrupted frame. A producer thread reads the Master-to-Slave stream and feeds
+the Slave byte by byte using `tzen_th_feed_b`. The main thread calls
+`tzen_th_main_function` concurrently and drains packets after joining.
+
+The Slave then calls `tzen_th_send_packet` with `123456789` and a zero-byte
+payload. Its configured `send_bytes` callback writes each complete framed
+packet in one `fwrite` call to the Slave-to-Master stream. The Master verifies
+the exact expected frame bytes, including COBS, CRC and delimiters, and rejects
+trailing data. These sends are explicit demonstration traffic; command dispatch
+and automatic replies are not implemented yet.
+
+```c
+TzenConfig_t cfg = {.send_bytes = my_send_frame, .user_data = my_transport};
+if (!tzen_th_init(&cfg)) { /* Handle initialization error. */ }
+if (!tzen_th_send_packet(payload, payload_len)) { /* Handle send failure. */ }
+```
+
+`my_send_frame(const uint8_t *frame, size_t len, void *user_data)` returns
+`bool`. It must consume/copy the entire frame before returning, and return
+false on any failure, including partial writes. The wire format is
+`0x00 | COBS(payload + CRC16-CCITT-FALSE) | 0x00`, with CRC high byte first.
+The payload can be empty and is bounded by `TZEN_TH_MAX_PACKET_SIZE - 2`.
+The harness copies the transport callback and user pointer at initialization;
+the pointed-to transport must remain valid during sends. A NULL callback
+permits RX-only use. TX uses bounded stack storage without heap allocation.
+
+Serialize send callers and calls to `tzen_th_transport_ok`; the RX tasks may
+continue independently. The callback must not reenter send or initialization.
+A failed callback makes `tzen_th_transport_ok()` false until reinitialization;
+later sends are still allowed and each returns its own result. Invalid send
+arguments or a missing callback return false without invoking the transport
+or changing this status.
 
 The queue supports one producer and one consumer using configurable critical
 sections. Initialize before starting either task. Full queues drop new frames;
 the consumer releases slots only after checking the CRC. Private
 `rx_valid_packets` and `rx_invalid_packets` counters in `testharness_state`
 can be inspected in a debugger while the tasks are stopped. The `check`
-target verifies CRC outcomes, queue reuse, malformed frames, and concurrent
-reception, plus a separate build with the default no-op hooks. Configuration
-callbacks are unused at this stage.
+target runs the host transfer example, verifies RX CRC outcomes, queue reuse,
+malformed frames and concurrent reception, plus a build with default no-op
+hooks. TX tests use independent COBS decoding and CRC verification, check a
+known wire vector, empty/zero payloads, all permitted lengths, and all two-byte
+payload values (including zero CRC bytes). They verify one callback per frame,
+argument rejection, callback failures, sticky status and reinitialization.
+Both default 256-byte and 600-byte decoded capacities are tested to cover
+254-byte COBS block boundaries and multiple full blocks.
 
 `TZEN_TH_ENTER_CRITICAL_SECTION()` and `TZEN_TH_EXIT_CRITICAL_SECTION()`
 default to no-ops in `tzen_cfg.h` for serialized calls from one task.

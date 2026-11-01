@@ -24,9 +24,18 @@ test_rx.exe: ../../../testharness-c/tests/test_rx.c ../../../testharness-c/src/t
 test_rx_single.exe: ../../../testharness-c/tests/test_rx.c ../../../testharness-c/src/tzen.c $(HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $< $(LDLIBS) -o $@
 
-check: test_rx.exe test_rx_single.exe
+test_tx.exe: ../../../testharness-c/tests/test_tx.c ../../../testharness-c/src/tzen.c $(HEADERS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $< $(LDLIBS) -o $@
+
+test_tx_large.exe: ../../../testharness-c/tests/test_tx.c ../../../testharness-c/src/tzen.c $(HEADERS)
+	$(CC) $(CPPFLAGS) -DTZEN_TH_MAX_PACKET_SIZE=600 $(CFLAGS) $(LDFLAGS) $< $(LDLIBS) -o $@
+
+check: $(TARGET) test_rx.exe test_rx_single.exe test_tx.exe test_tx_large.exe
+	./$(TARGET)
 	./test_rx.exe
 	./test_rx_single.exe
+	./test_tx.exe
+	./test_tx_large.exe
 
 clean:
-	$(RM) $(TARGET) test_rx.exe test_rx_single.exe
+	$(RM) $(TARGET) test_rx.exe test_rx_single.exe test_tx.exe test_tx_large.exe

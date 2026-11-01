@@ -123,6 +123,9 @@ typedef TzenStepResult_t (*TzenStepFn_t)(TzenContext_t *ctx);
 typedef bool (*TzenSetupFn_t)(TzenContext_t *ctx);
 typedef void (*TzenTeardownFn_t)(TzenContext_t *ctx,
                                  TzenTestStatus_t final_status);
+/** Send one complete frame, including both zero delimiters. Return true only
+ * after consuming/copying all bytes. The frame pointer expires on return.
+ * Do not reenter init/send from this callback. */
 typedef bool (*TzenSendBytesFn_t)(const uint8_t *frame, size_t len,
                                   void *user_data);
 typedef uint32_t (*TzenGetUsFn_t)(void *user_data);
@@ -162,7 +165,7 @@ typedef struct {
 // ============================================================================
 
 typedef struct {
-  /* User callback for sending bytes. */
+  /* Full-frame transport callback; NULL permits RX-only use. */
   TzenSendBytesFn_t send_bytes;
 
   /* User callback for reading the current time in microseconds. */
@@ -182,11 +185,24 @@ typedef struct {
 // ============================================================================
 
 /**
- * Reset the RX queue and decoder. Returns false if cfg is NULL.
- * Configuration callbacks and test execution are not used yet.
- * Call only while the producer and consumer are stopped.
+ * Reset RX and transport status. Returns false if cfg is NULL.
+ * Copies send_bytes and user_data; cfg need not remain alive afterward.
+ * Test execution and get_us are not used yet. Call with all callers stopped.
  */
 bool tzen_th_init(const TzenConfig_t *cfg);
+
+/**
+ * Send 0x00 | COBS(payload + CRC16-CCITT-FALSE) | 0x00 in one callback.
+ * CRC covers only the payload; its two bytes are appended high byte first.
+ * Maximum payload length is TZEN_TH_MAX_PACKET_SIZE - 2. Empty payloads are
+ * allowed (NULL is valid only with len == 0). Payload must stay valid until
+ * return. Returns false for invalid arguments, absent callback, or TX failure.
+ * Invalid arguments/absent callback send nothing and do not change TX status.
+ * No retries are made; later sends remain allowed after a callback failure.
+ * Call after init from task context. Serialize send callers and status queries;
+ * RX producer/consumer may run concurrently. Uses bounded stack storage.
+ */
+bool tzen_th_send_packet(const uint8_t *payload, size_t len);
 
 /**
  * Feed one received byte from a single producer, in arrival order.
@@ -222,7 +238,8 @@ void tzen_th_main_function(void);
  */
 void tzen_th_worker_main_function(uint8_t worker_id);
 
-/* Sticky TX result since init. Failure aborts the active run with teardown. */
+/* True after init until a send callback returns false; reset by reinit.
+ * False before the first init. Test execution/teardown is not implemented yet. */
 bool tzen_th_transport_ok(void);
 
 /**

@@ -28,6 +28,15 @@
 #define TZEN_TH_EXIT_CRITICAL_SECTION() ((void)0)
 #endif
 
+/* RX-specific overrides may share the application's general hooks. */
+#if defined(TZEN_TH_ENTER_CRITICAL_SECTION_RX_QUEUE) != defined(TZEN_TH_EXIT_CRITICAL_SECTION_RX_QUEUE)
+#error "Define both TZEN_TH RX critical-section hooks or neither"
+#endif
+#ifndef TZEN_TH_ENTER_CRITICAL_SECTION_RX_QUEUE
+#define TZEN_TH_ENTER_CRITICAL_SECTION_RX_QUEUE() TZEN_TH_ENTER_CRITICAL_SECTION()
+#define TZEN_TH_EXIT_CRITICAL_SECTION_RX_QUEUE() TZEN_TH_EXIT_CRITICAL_SECTION()
+#endif
+
 /* RX ring slots: one slot is reserved; usable queued frames = slots - 1. */
 #ifndef TZEN_TH_RX_SLOTS
 #define TZEN_TH_RX_SLOTS 4U
@@ -36,6 +45,10 @@
 /* Maximum decoded packet size, including the two CRC bytes. */
 #ifndef TZEN_TH_MAX_PACKET_SIZE
 #define TZEN_TH_MAX_PACKET_SIZE 256U
+#endif
+
+#if TZEN_TH_MAX_PACKET_SIZE < 2U || TZEN_TH_MAX_PACKET_SIZE > 65535U
+#error "TZEN_TH_MAX_PACKET_SIZE must fit a uint16_t length and include two CRC bytes"
 #endif
 
 /* Number of Tzen Configured Workers */

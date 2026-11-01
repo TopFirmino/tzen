@@ -14,6 +14,9 @@
 
 /* Current test harness state (work in progress). */
 static struct tzen_state_s {
+    TzenSendBytesFn_t send_bytes;
+    void *user_data;
+    bool transport_ok;
     struct rx_queue {
         struct {
             /* Decoded payload, including CRC bytes; excludes COBS framing. */
@@ -37,7 +40,7 @@ static struct tzen_state_s {
 
 } testharness_state;
 
-/* Reset RX state before feeding bytes. Configuration callbacks are not used yet.
+/* Reset transport and RX state before starting callers.
  * Initialization requires the producer and consumer to be stopped. */
 bool tzen_th_init(const TzenConfig_t *cfg)
 {
@@ -45,6 +48,9 @@ bool tzen_th_init(const TzenConfig_t *cfg)
         return false;
     }
 
+    testharness_state.send_bytes = cfg->send_bytes;
+    testharness_state.user_data = cfg->user_data;
+    testharness_state.transport_ok = true;
     testharness_state.rx_queue.write_idx = 0U;
     testharness_state.rx_queue.read_idx = 0U;
     testharness_state.rx_queue.cobs_code = 0xFFU;
@@ -125,6 +131,53 @@ static uint16_t tzen_th_crc16(const uint8_t *data, size_t len)
         }
     }
     return crc;
+}
+
+bool tzen_th_send_packet(const uint8_t *payload, size_t len)
+{
+    /* Worst case: one code per 254 decoded bytes, an extra code, delimiters.
+     * Encode payload and CRC directly; no second decoded packet buffer. */
+    uint8_t frame[TZEN_TH_MAX_PACKET_SIZE + TZEN_TH_MAX_PACKET_SIZE / 254U + 3U];
+    size_t code_idx = 1U;
+    size_t pos = 2U;
+    uint8_t code = 1U;
+
+    if (testharness_state.send_bytes == NULL ||
+        (payload == NULL && len != 0U) || len > TZEN_TH_MAX_PACKET_SIZE - 2U) {
+        return false;
+    }
+
+    uint16_t crc = tzen_th_crc16(payload, len);
+    frame[0] = 0U;
+    for (size_t i = 0U; i < len + 2U; ++i) {
+        uint8_t byte = i < len ? payload[i]
+                              : (i == len ? (uint8_t)(crc >> 8U) : (uint8_t)crc);
+        if (byte == 0U) {
+            frame[code_idx] = code;
+            code_idx = pos++;
+            code = 1U;
+        } else {
+            frame[pos++] = byte;
+            if (++code == 0xFFU) {
+                frame[code_idx] = code;
+                code_idx = pos++;
+                code = 1U;
+            }
+        }
+    }
+    frame[code_idx] = code;
+    frame[pos++] = 0U;
+
+    bool sent = testharness_state.send_bytes(frame, pos, testharness_state.user_data);
+    if (!sent) {
+        testharness_state.transport_ok = false;
+    }
+    return sent;
+}
+
+bool tzen_th_transport_ok(void)
+{
+    return testharness_state.transport_ok;
 }
 
 void tzen_th_main_function(void)

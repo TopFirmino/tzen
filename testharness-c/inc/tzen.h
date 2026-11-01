@@ -195,17 +195,22 @@ bool tzen_th_init(const TzenConfig_t *cfg);
  * A 0x00 delimiter publishes a nonempty, complete frame if space is available.
  * Usable queue capacity is TZEN_TH_RX_SLOTS - 1 frames; a full queue drops
  * the newly completed frame. Oversized frames are dropped until a delimiter.
- * CRC and Protobuf validation are left to tzen_th_main_function.
- * Call tzen_th_init before feeding bytes. Synchronization is unfinished;
- * the current volatile indices alone do not guarantee safe ISR/task access.
+ * CRC validation is left to tzen_th_main_function.
+ * Call tzen_th_init before starting either task. One producer task may run
+ * concurrently with one consumer task calling tzen_th_main_function.
+ * Concurrent callers must configure TZEN_TH_ENTER_CRITICAL_SECTION and
+ * TZEN_TH_EXIT_CRITICAL_SECTION in tzen_cfg.h or the application's build.
+ * The default hooks do nothing and require serialized calls (one task).
+ * ISR use requires ISR-safe hooks; task mutexes are not suitable for an ISR.
  */
 void tzen_th_feed_b(uint8_t byte);
 
 /**
- * Intended protocol processing entry point for a single consumer.
- * Drain completed RX slots, validate CRC16, and decode Protobuf commands.
- * Reply to queries, forward control requests, and queue test executions.
- * Not implemented in tzen.c yet.
+ * Process up to TZEN_TH_RX_SLOTS - 1 queued packets per call.
+ * Verify CRC-16/CCITT-FALSE over the payload, excluding the final two CRC
+ * bytes (high byte first). Missing or invalid CRC trailers are discarded
+ * without a response. Valid packets are consumed; dispatch is not added yet.
+ * Call from one consumer task only; it may run concurrently with feed_b.
  */
 void tzen_th_main_function(void);
 

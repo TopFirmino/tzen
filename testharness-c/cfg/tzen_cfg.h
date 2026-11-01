@@ -12,6 +12,22 @@
  * TZEN TESTHARNESS CONFIGURATION
 **************************************************************/
 
+/* Override both macros in the application's build (for example, with a
+ * forced-include port header). Defaults are for serialized calls only.
+ * For concurrent calls, both hooks must use the same protection mechanism
+ * and provide mutual exclusion and memory visibility between callers.
+ * An interrupt-based port must preserve and restore the prior interrupt state.
+ * Hooks are paired in one scope, are never nested, and do not cover CRC work.
+ * A task mutex is suitable for tasks; ISR callers need ISR-safe hooks. */
+#if defined(TZEN_TH_ENTER_CRITICAL_SECTION) != defined(TZEN_TH_EXIT_CRITICAL_SECTION)
+#error "Define both TZEN_TH critical-section hooks or neither"
+#endif
+
+#ifndef TZEN_TH_ENTER_CRITICAL_SECTION
+#define TZEN_TH_ENTER_CRITICAL_SECTION() ((void)0)
+#define TZEN_TH_EXIT_CRITICAL_SECTION() ((void)0)
+#endif
+
 /* RX ring slots: one slot is reserved; usable queued frames = slots - 1. */
 #ifndef TZEN_TH_RX_SLOTS
 #define TZEN_TH_RX_SLOTS 4U

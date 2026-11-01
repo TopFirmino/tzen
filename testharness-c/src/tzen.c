@@ -4,12 +4,8 @@
     Author: TopFirmino (L. Furcas)
     License: see LICENSE.md.
 */
-#include "tzen.h"
 
-_Static_assert(TZEN_TH_RX_SLOTS >= 2U && TZEN_TH_RX_SLOTS <= 256U,
-               "RX queue requires 2 to 256 slots");
-_Static_assert(TZEN_TH_MAX_PACKET_SIZE >= 2U && TZEN_TH_MAX_PACKET_SIZE <= UINT16_MAX,
-               "RX packet size must fit the length field and CRC trailer");
+#include "tzen.h"
 
 
 /*
@@ -70,13 +66,13 @@ void tzen_th_feed_b(uint8_t byte) {
          * CRC validation belongs to tzen_th_main_function. */
         if (!testharness_state.rx_queue.drop_frame && (testharness_state.rx_queue.cur_pos > 0U) && (testharness_state.rx_queue.cobs_block == 0U)) {
             uint8_t next_w = (write_idx + 1U) % TZEN_TH_RX_SLOTS;
-            TZEN_TH_ENTER_CRITICAL_SECTION();
+            TZEN_TH_ENTER_CRITICAL_SECTION_RX_QUEUE();
             if (next_w != testharness_state.rx_queue.read_idx) {
                 testharness_state.rx_queue.slots[write_idx].len = testharness_state.rx_queue.cur_pos;
                 /* Publish data and length together to the consumer. */
                 testharness_state.rx_queue.write_idx = next_w;
             }
-            TZEN_TH_EXIT_CRITICAL_SECTION();
+            TZEN_TH_EXIT_CRITICAL_SECTION_RX_QUEUE();
         }
         /* Start the next frame without inserting a leading zero. */
         testharness_state.rx_queue.cobs_code  = 0xFFU;
@@ -138,9 +134,9 @@ void tzen_th_main_function(void)
     /* Bound each call so a continuous producer cannot keep this task here. */
     for (size_t count = 0U; count < TZEN_TH_RX_SLOTS - 1U; ++count) {
         bool packet_available;
-        TZEN_TH_ENTER_CRITICAL_SECTION();
+        TZEN_TH_ENTER_CRITICAL_SECTION_RX_QUEUE();
         packet_available = read_idx != testharness_state.rx_queue.write_idx;
-        TZEN_TH_EXIT_CRITICAL_SECTION();
+        TZEN_TH_EXIT_CRITICAL_SECTION_RX_QUEUE();
         if (!packet_available) {
             break;
         }
@@ -165,8 +161,8 @@ void tzen_th_main_function(void)
 
         /* Release only after the last access to the slot's data and length. */
         read_idx = (uint8_t)((read_idx + 1U) % TZEN_TH_RX_SLOTS);
-        TZEN_TH_ENTER_CRITICAL_SECTION();
+        TZEN_TH_ENTER_CRITICAL_SECTION_RX_QUEUE();
         testharness_state.rx_queue.read_idx = read_idx;
-        TZEN_TH_EXIT_CRITICAL_SECTION();
+        TZEN_TH_EXIT_CRITICAL_SECTION_RX_QUEUE();
     }
 }

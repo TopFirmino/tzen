@@ -11,7 +11,11 @@ The C test file follows the proposed scratchpad/step/setup/teardown pattern:
 - `LED host sync`: enable LED and wait at sync ID 42, then verify after release.
 - `Expected failure`: intentionally emit a failed step and FAIL result.
 
-All exits call teardown, turning the LED off. `ArduinoHarness/ArduinoHarness.ino`
+All started-test exits call teardown, turning the LED off.
+The adapter feeds serial bytes to `tzen_th_feed_b`, calls
+`tzen_th_main_function`, then polls each configured worker. It contains no
+protocol framing or decoding. The LED examples share one physical output;
+run them sequentially because concurrent LED tests can affect one another. `ArduinoHarness/ArduinoHarness.ino`
 is the board adapter. `C/test_example.c` contains the registry and steps.
 `prepare.py` stages those plus the canonical harness/TTP/nanopb sources under
 `build/ArduinoHarness`; do not edit generated copies. `build.py` stages, compiles,
@@ -35,9 +39,10 @@ check your port before uploading elsewhere. Close IDE Serial Monitor before
 using the Python client or uploading. Port opening resets this Mega; the client
 waits for boot before requesting discovery.
 
-`--verify` also checks intentional FAIL, abort while waiting, BUSY, wrong sync ID,
+`--verify` also checks intentional FAIL, abort while waiting, duplicate-run BUSY, wrong sync ID,
 CRC rejection, and abort during a yielded step. The intentional failure is an
 expected verification result. Protobuf omits zero/default fields in printed
 messages: an empty `finished {}` means SUCCESS, not a missing result.
 
-See [verification.md](verification.md) for the connected-board verification.
+See [verification.md](verification.md) for historical single-worker board results.
+Those results do not validate the new multi-worker firmware.

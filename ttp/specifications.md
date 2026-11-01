@@ -168,7 +168,7 @@ identity for all three alternatives.
 
 | Event | Fields (`tag: name: type`) | Meaning |
 | --- | --- | --- |
-| TestStepEvent | `1: step_number: uint32`, `2: success: bool`, `3: description: string` | Reports a step outcome and description. The sample emits steps 1 and 2; failure policy for real tests remains application-specific. |
+| TestStepEvent | `1: step_number: uint32`, `2: success: bool` | Reports a completed step outcome. The engine emits it automatically; explanatory text uses LogEvent. The sample emits steps 1 and 2; failure policy for real tests remains application-specific. |
 | SyncWaitEvent | `1: sync_id: uint32` | Announces that the run is waiting until released with the matching run ID and sync ID. The sample uses sync ID 1 and has no wait timeout. |
 | TestFinishedEvent | `1: status: Status` | Reports `SUCCESS=0`, `FAIL=1`, or `ABORTED=2`. This result is separate from command acceptance. |
 | LogEvent | `1: level: Level`, `2: message: string` | Reports `INFO=0`, `WARNING=1`, or `ERROR=2` and diagnostic text. |
@@ -188,7 +188,7 @@ Host -> Target: HostToTarget { seq_id: 2, get_test_info: { index: 0 } }
 Target -> Host: TargetToHost { seq_id: 2, status: RESULT_OK, test_info: { index: 0, name: "example", total_steps: 2 } }
 Host -> Target: HostToTarget { seq_id: 3, execute_test: { index: 0, run_id: 100 } }
 Target -> Host: TargetToHost { seq_id: 3, status: RESULT_OK }
-Target -> Host: TargetToHost { seq_id: 0, test_event: { run_id: 100, test_index: 0, step: { step_number: 1, success: true, description: "ready" } } }
+Target -> Host: TargetToHost { seq_id: 0, test_event: { run_id: 100, test_index: 0, step: { step_number: 1, success: true } } }
 Target -> Host: TargetToHost { seq_id: 0, test_event: { run_id: 100, test_index: 0, sync: { sync_id: 7 } } }
 Host -> Target: HostToTarget { seq_id: 4, sync_release: { run_id: 100, sync_id: 7 } }
 Target -> Host: TargetToHost { seq_id: 4, status: RESULT_OK }
@@ -207,10 +207,18 @@ The sample sends the direct command response before events caused by that
 command. A rejected command returns its nonzero sequence ID and error status,
 without response data or a new completion event.
 
+`TestStepEvent` tag 3 and the name `description` are reserved. They must not be
+reused. Explanatory text belongs in `LogEvent.message`. Older step descriptions
+are ignored as unknown fields by regenerated receivers, subject to frame bounds.
+Deploy the regenerated host and firmware together because maximum frame sizes
+have decreased.
+
 ## Execution semantics
 
 The wire schema represents command acceptance, step reports, synchronization
-waits, and terminal results. Scheduling, setup/teardown, command queues, and
+waits, and terminal results. Step results are generated internally when a step completes (after release for
+a synchronization wait); yielding or aborting an unfinished step adds no step
+result. Scheduling, setup/teardown, command queues, and
 execution state belong to the C harness, not the transmission codec. See
 `../testharness-c/README.md` for the implementation contract and
 `../tzen/README.md` for host orchestration and timeout behavior.
@@ -222,7 +230,6 @@ execution state belong to the C harness, not the transmission codec. See
 | Selector | max_size / C array bytes | Maximum UTF-8 text bytes excluding NUL |
 | --- | ---: | ---: |
 | GetTestInfoResp.name | 32 | 31 |
-| TestStepEvent.description | 64 | 63 |
 | LogEvent.message | 64 | 63 |
 
 `max_size` includes the terminating NUL. These are byte limits, not Unicode
@@ -232,22 +239,22 @@ string to configure in the new schema. All other fields are scalar or nested
 messages, requiring no string/repeated-field size options.
 
 Temporary generation against the current schema/options produces static arrays
-for all three strings and these maximum encoded sizes:
+for both strings and these maximum encoded sizes:
 
 | Message | Maximum protobuf bytes |
 | --- | ---: |
 | HostToTarget | 20 |
-| TargetToHost | 97 |
-| TestEvent | 87 |
-| TestStepEvent | 73 |
+| TargetToHost | 77 |
+| TestEvent | 22 |
+| TestStepEvent | 8 |
 | LogEvent | 67 |
 | GetTestInfoResp | 45 |
 
 These are bounds, not fixed lengths. With two CRC bytes, the frame-size bound is
 `(N + 2) + floor((N + 2) / 254) + 3`, including both delimiters. Allocate
-25 bytes for a framed HostToTarget and 102 bytes for a framed TargetToHost.
-The C shared buffer macros use the larger envelope bound (97 protobuf bytes),
-giving a 99-byte decoded frame payload and a 102-byte complete frame bound. Raw protobuf encode/decode APIs do not add or check a CRC; CRC applies
+25 bytes for a framed HostToTarget and 82 bytes for a framed TargetToHost.
+The C shared buffer macros use the larger envelope bound (77 protobuf bytes),
+giving a 79-byte decoded frame payload and an 82-byte complete frame bound. Raw protobuf encode/decode APIs do not add or check a CRC; CRC applies
 to the frame APIs.
 
 ## Validation and regeneration

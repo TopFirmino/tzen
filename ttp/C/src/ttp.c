@@ -243,6 +243,24 @@ static Ttp_Status_t encode_frame(const pb_msgdesc_t *fields, const void *message
     return TTP_STATUS_OK;
 }
 
+static Ttp_Status_t decode_payload(const pb_msgdesc_t *fields, void *message,
+                                   const uint8_t *payload, size_t payload_size)
+{
+    if (!message || !payload) return TTP_STATUS_INVALID_ARGUMENT;
+    if (payload_size < TTP_CRC_SIZE) return TTP_STATUS_FRAMING_FAILED;
+    payload_size -= TTP_CRC_SIZE;
+    if (crc16(payload, payload_size) !=
+        (uint16_t)(((uint16_t)payload[payload_size] << 8U) | payload[payload_size + 1U]))
+        return TTP_STATUS_CRC_FAILED;
+    return decode_message(fields, message, payload, payload_size);
+}
+
+Ttp_Status_t Ttp_DecodeHostToTargetPayload(HostToTarget *message,
+    const uint8_t *buffer, size_t size)
+{
+    return decode_payload(HostToTarget_fields, message, buffer, size);
+}
+
 static Ttp_Status_t decode_frame(const pb_msgdesc_t *fields, void *message,
                                const uint8_t *frame,
                                size_t frame_size)
@@ -262,17 +280,7 @@ static Ttp_Status_t decode_frame(const pb_msgdesc_t *fields, void *message,
         return status;
     }
 
-    if (payload_size < TTP_CRC_SIZE)
-    {
-        return TTP_STATUS_FRAMING_FAILED;
-    }
-    payload_size -= TTP_CRC_SIZE;
-    if (crc16(payload, payload_size) !=
-        (uint16_t)(((uint16_t)payload[payload_size] << 8U) | payload[payload_size + 1U]))
-    {
-        return TTP_STATUS_CRC_FAILED;
-    }
-    return decode_message(fields, message, payload, payload_size);
+    return decode_payload(fields, message, payload, payload_size);
 }
 
 

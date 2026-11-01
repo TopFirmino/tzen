@@ -41,6 +41,10 @@ Ttp_Status_t Ttp_EncodeHostToTargetFrame(const HostToTarget *message,
 Ttp_Status_t Ttp_DecodeHostToTargetFrame(HostToTarget *message,
     const uint8_t *buffer, size_t size);
 
+/* Already COBS-decoded protobuf + CRC payload, verified before decoding. */
+Ttp_Status_t Ttp_DecodeHostToTargetPayload(HostToTarget *message,
+    const uint8_t *buffer, size_t size);
+
 Ttp_Status_t Ttp_EncodeTargetToHost(const TargetToHost *message,
     uint8_t *buffer, size_t capacity, size_t *size);
 Ttp_Status_t Ttp_DecodeTargetToHost(TargetToHost *message,

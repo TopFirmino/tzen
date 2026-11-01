@@ -87,7 +87,6 @@ typedef struct _HostToTarget {
 typedef struct _TestStepEvent {
     uint32_t step_number;
     bool success;
-    char description[64]; /* In Nanopb .options: max_size = 64 (o usa un ID numerico) */
 } TestStepEvent;
 
 typedef struct _SyncWaitEvent {
@@ -181,7 +180,7 @@ extern "C" {
 #define AbortTestCmd_init_default                {0}
 #define SyncReleaseCmd_init_default              {0, 0}
 #define TestEvent_init_default                   {0, 0, 0, {TestStepEvent_init_default}}
-#define TestStepEvent_init_default               {0, 0, ""}
+#define TestStepEvent_init_default               {0, 0}
 #define SyncWaitEvent_init_default               {0}
 #define TestFinishedEvent_init_default           {_TestFinishedEvent_Status_MIN}
 #define LogEvent_init_default                    {_LogEvent_Level_MIN, ""}
@@ -195,7 +194,7 @@ extern "C" {
 #define AbortTestCmd_init_zero                   {0}
 #define SyncReleaseCmd_init_zero                 {0, 0}
 #define TestEvent_init_zero                      {0, 0, 0, {TestStepEvent_init_zero}}
-#define TestStepEvent_init_zero                  {0, 0, ""}
+#define TestStepEvent_init_zero                  {0, 0}
 #define SyncWaitEvent_init_zero                  {0}
 #define TestFinishedEvent_init_zero              {_TestFinishedEvent_Status_MIN}
 #define LogEvent_init_zero                       {_LogEvent_Level_MIN, ""}
@@ -219,7 +218,6 @@ extern "C" {
 #define HostToTarget_sync_release_tag            6
 #define TestStepEvent_step_number_tag            1
 #define TestStepEvent_success_tag                2
-#define TestStepEvent_description_tag            3
 #define SyncWaitEvent_sync_id_tag                1
 #define TestFinishedEvent_status_tag             1
 #define TestEvent_run_id_tag                     1
@@ -319,8 +317,7 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (event,finished,event.finished),   5)
 
 #define TestStepEvent_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   step_number,       1) \
-X(a, STATIC,   SINGULAR, BOOL,     success,           2) \
-X(a, STATIC,   SINGULAR, STRING,   description,       3)
+X(a, STATIC,   SINGULAR, BOOL,     success,           2)
 #define TestStepEvent_CALLBACK NULL
 #define TestStepEvent_DEFAULT NULL
 
@@ -383,10 +380,10 @@ extern const pb_msgdesc_t LogEvent_msg;
 #define SyncReleaseCmd_size                      12
 #define SyncWaitEvent_size                       6
 #define TTP_PB_H_MAX_SIZE                        TargetToHost_size
-#define TargetToHost_size                        97
-#define TestEvent_size                           87
+#define TargetToHost_size                        77
+#define TestEvent_size                           22
 #define TestFinishedEvent_size                   2
-#define TestStepEvent_size                       73
+#define TestStepEvent_size                       8
 
 #ifdef __cplusplus
 } /* extern "C" */

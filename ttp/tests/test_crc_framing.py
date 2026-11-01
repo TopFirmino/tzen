@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
                     ttp.TargetToHost(log=ttp.LogEvent(level=ttp.LogEvent.ERROR, message='x'*63)),
                     ttp.TargetToHost(seq_id=0xFFFFFFFF, status=ttp.RESULT_ERR_INVALID,
                         test_event=ttp.TestEvent(run_id=0xFFFFFFFF, test_index=0xFFFFFFFF,
-                        step=ttp.TestStepEvent(step_number=0xFFFFFFFF, success=True, description='x'*63))),
+                        step=ttp.TestStepEvent(step_number=0xFFFFFFFF, success=True))),
                     ttp.TargetToHost(test_event=ttp.TestEvent(run_id=1, sync=ttp.SyncWaitEvent(sync_id=1))),
                     ttp.TargetToHost(test_event=ttp.TestEvent(run_id=1,
                         finished=ttp.TestFinishedEvent(status=ttp.TestFinishedEvent.ABORTED)))]

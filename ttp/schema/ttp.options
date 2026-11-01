@@ -4,6 +4,5 @@
 # 32-byte buffer: up to 31 text bytes plus NUL.
 GetTestInfoResp.name          max_size:32
 
-# 64-byte buffers: up to 63 text bytes plus NUL.
+# 64-byte buffer: up to 63 text bytes plus NUL.
 LogEvent.message             max_size:64
-TestStepEvent.description    max_size:64

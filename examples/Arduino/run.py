@@ -19,12 +19,22 @@ def main():
         for name in ("LED cycle", "LED host sync"):
             result = client.run(name, on_event=show)
             assert result.passed, result
+            steps = [event.test_event.step for event in result.events
+                     if event.WhichOneof("payload") == "test_event" and
+                     event.test_event.WhichOneof("event") == "step"]
+            assert [(step.step_number, step.success) for step in steps] == [(1, True), (2, True)]
             print(f"PASS: {name}, run={result.run_id}", flush=True)
         if args.verify:
             result = client.run("Expected failure", on_event=show)
             assert result.status == ttp.TestFinishedEvent.FAIL
+            steps = [event.test_event.step for event in result.events
+                     if event.WhichOneof("payload") == "test_event" and
+                     event.test_event.WhichOneof("event") == "step"]
+            assert [(step.step_number, step.success) for step in steps] == [(1, False)]
             result = client.run("LED host sync", on_event=show, on_sync=lambda event: False)
             assert result.status == ttp.TestFinishedEvent.ABORTED
+            assert not any(event.WhichOneof("payload") == "test_event" and
+                           event.test_event.WhichOneof("event") == "step" for event in result.events)
             from tzen import CommandError
             run_id = client.start(1)
             while True:
@@ -32,7 +42,7 @@ def main():
                 if event.WhichOneof("payload") == "test_event" and event.test_event.WhichOneof("event") == "sync":
                     break
             for command, expected in (
-                (ttp.make_execute_test(0, run_id+1), ttp.RESULT_ERR_BUSY),
+                (ttp.make_execute_test(0, run_id), ttp.RESULT_ERR_BUSY),
                 (ttp.make_sync_release(run_id, 99), ttp.RESULT_ERR_NOT_FOUND)):
                 try:
                     client.request(command)

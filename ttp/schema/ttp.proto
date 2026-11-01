@@ -95,7 +95,8 @@ message TestEvent {
 message TestStepEvent {
     uint32 step_number = 1;
     bool   success = 2;
-    string description = 3; // In Nanopb .options: max_size = 64 (o usa un ID numerico)
+    reserved 3; // Former description: explanatory text belongs in LogEvent.
+    reserved "description";
 }
 
 message SyncWaitEvent {

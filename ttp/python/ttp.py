@@ -34,7 +34,7 @@ RESULT_ERR_BUSY = ttp_pb2.RESULT_ERR_BUSY
 RESULT_ERR_NOT_FOUND = ttp_pb2.RESULT_ERR_NOT_FOUND
 RESULT_ERR_INVALID = ttp_pb2.RESULT_ERR_INVALID
 Message = Union[HostToTarget, TargetToHost]
-MAX_FRAME_SIZE = 102
+MAX_FRAME_SIZE = 82
 
 
 def encode_message(message: Message) -> bytes:

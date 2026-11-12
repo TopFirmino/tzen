@@ -112,12 +112,6 @@
 
 
 
-#ifdef __cplusplus
-#define TZEN_ALIGNAS(n) alignas(n)
-#define TZEN_ALIGNOF(t) alignof(t)
-#else
-#define TZEN_ALIGNAS(n) _Alignas(n)
-#define TZEN_ALIGNOF(t) _Alignof(t)
-#endif
+
 
 #endif

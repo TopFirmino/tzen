@@ -8,7 +8,7 @@
 #ifndef TZEN_H
 #define TZEN_H
 
-#include "tzen_types.h"
+#include "tzen_context.h"
 
 #ifdef __cplusplus
 extern "C" {

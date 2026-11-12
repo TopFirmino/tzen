@@ -5,8 +5,8 @@
     License: see LICENSE.md.
 */
 
-#ifndef TZEN_CFG_H
-#define TZEN_CFG_H
+#ifndef TZEN_HOST_CFG_H
+#define TZEN_HOST_CFG_H
 
 /**************************************************************
  * TZEN TESTHARNESS CONFIGURATION
@@ -112,12 +112,19 @@
 
 
 
+
+
+/* Runtime configuration and host pipe interface. */
+#include "tzen_types.h"
 #ifdef __cplusplus
-#define TZEN_ALIGNAS(n) alignas(n)
-#define TZEN_ALIGNOF(t) alignof(t)
-#else
-#define TZEN_ALIGNAS(n) _Alignas(n)
-#define TZEN_ALIGNOF(t) _Alignof(t)
+extern "C" {
+#endif
+extern const TzenConfig_t host_configuration;
+bool host_io_init(void);
+/* Returns 1 for a byte, 0 on timeout, -1 at EOF/error. */
+int host_read_byte(uint8_t *byte);
+#ifdef __cplusplus
+}
 #endif
 
 #endif

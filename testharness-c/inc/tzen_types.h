@@ -8,7 +8,6 @@
 #ifndef TZEN_TYPES_H
 #define TZEN_TYPES_H
 
-#include "tzen_cfg.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -62,48 +61,6 @@ typedef enum {
 
 // Forward declaration of the execution context.
 typedef struct TzenContext_s TzenContext_t;
-
-// ============================================================================
-// 3. EXECUTION CONTEXT AND SCRATCHPAD
-// ============================================================================
-
-struct TzenContext_s {
-  uint32_t run_id;       /**< Run ID assigned by the host (ExecuteTest). */
-  uint32_t test_index;   /**< Index of the current test. */
-  uint32_t current_step; /**< Zero-based index of the current step. */
-  uint32_t step_Iterations; /**< Number of times the current step has returned
-                               TZEN_STEP_YIELD. */
-  uint32_t pending_sync_id; /**< Expected synchronization ID while waiting
-                               for SyncRelease. */
-
-  /**
-   * Shared scratchpad aligned to 8 bytes.
-   * Cleared automatically at the start of each test.
-   * Allows steps to share state without global static variables.
-   */
-  TZEN_ALIGNAS(8)
-  uint8_t scratchpad[TZEN_TEST_SCRATCHPAD_SIZE];
-
-  /**
-   * Opaque pointer for future extensions, such as a Berry VM for dynamic
-   * tests. NULL for static C tests.
-   */
-  void *ext_vm_ctx;
-};
-
-/**
- * @brief Access the scratchpad as the requested state type.
- * Checks at compile time that the type fits the buffer and its alignment.
- *
- * Example: my_state_t *st = TZEN_GET_STATE(ctx, my_state_t);
- */
-#define TZEN_GET_STATE(ctx, state_type_t)                                      \
-  ((state_type_t *)((void)(sizeof(char[(sizeof(state_type_t) <=                \
-                                            TZEN_TEST_SCRATCHPAD_SIZE &&       \
-                                        TZEN_ALIGNOF(state_type_t) <= 8)       \
-                                           ? 1                                 \
-                                           : -1])),                            \
-                    (void *)((ctx)->scratchpad)))
 
 // ============================================================================
 // 4. TEST AND STEP DEFINITIONS

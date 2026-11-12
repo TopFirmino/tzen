@@ -23,11 +23,8 @@ corrupted frame. A producer thread reads the Master-to-Slave stream and feeds
 the Slave byte by byte using `tzen_th_feed_b`. The main thread calls
 `tzen_th_main_function` concurrently and drains packets after joining.
 
-The Slave then calls `tzen_th_send_packet` with `123456789` and a zero-byte
-payload. Its configured `send_bytes` callback writes each complete framed
-packet in one `fwrite` call to the Slave-to-Master stream. The Master verifies
-the exact expected frame bytes, including COBS, CRC and delimiters, and rejects
-trailing data. These initial sends demonstrate the raw framing API.
+The configured `send_bytes` callback writes each complete frame to the
+Slave-to-Master stream. The engine handles CRC, COBS and delimiters internally.
 
 `protocol_cases.c` then registers two example test descriptors and exchanges
 actual TTP requests/replies through a second pair of buffered binary temporary
@@ -49,7 +46,7 @@ time to avoid intentionally overflowing the bounded RX queue.
 ```c
 TzenConfig_t cfg = {.send_bytes = my_send_frame, .user_data = my_transport};
 if (!tzen_th_init(&cfg)) { /* Handle initialization error. */ }
-if (!tzen_th_send_packet(payload, payload_len)) { /* Handle send failure. */ }
+tzen_th_main_function(); /* Process requests and transmit engine replies/events. */
 ```
 
 `my_send_frame(const uint8_t *frame, size_t len, void *user_data)` returns

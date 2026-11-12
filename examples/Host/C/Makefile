@@ -8,7 +8,7 @@ THREAD_FLAGS = -pthread
 TARGET = tzen_host.exe
 CODECS = ../../../ttp/C/src/ttp.c ../../../ttp/C/generated/ttp.pb.c ../../../nanopb/pb_common.c ../../../nanopb/pb_encode.c ../../../nanopb/pb_decode.c
 SOURCES = main.c protocol_cases.c host_critical_section.c ../../../testharness-c/src/tzen.c $(CODECS)
-HEADERS = host_critical_section.h ../../../testharness-c/inc/tzen.h ../../../testharness-c/cfg/tzen_cfg.h ../../../ttp/C/inc/ttp.h ../../../ttp/C/generated/ttp.pb.h
+HEADERS = host_critical_section.h ../../../testharness-c/inc/tzen.h ../../../testharness-c/inc/tzen_types.h ../../../testharness-c/cfg/tzen_cfg.h ../../../ttp/C/inc/ttp.h ../../../ttp/C/generated/ttp.pb.h
 
 .PHONY: all run check clean
 

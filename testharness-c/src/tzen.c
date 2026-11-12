@@ -191,7 +191,18 @@ static uint16_t tzen_th_crc16(const uint8_t *data, size_t len)
     return crc;
 }
 
-bool tzen_th_send_packet(const uint8_t *payload, size_t len)
+/**
+ * Send 0x00 | COBS(payload + CRC16-CCITT-FALSE) | 0x00 in one callback.
+ * CRC covers only the payload; its two bytes are appended high byte first.
+ * Maximum payload length is TZEN_TH_MAX_PACKET_SIZE - 2. Empty payloads are
+ * allowed (NULL is valid only with len == 0). Payload must stay valid until
+ * return. Returns false for invalid arguments, absent callback, or TX failure.
+ * Invalid arguments/absent callback send nothing and do not change TX status.
+ * No retries are made; later sends remain allowed after a callback failure.
+ * Call after init from task context. Whole callbacks are serialized by the TX
+ * hooks; status is protected by the worker-queue hooks. Uses bounded stack.
+ */
+static bool tzen_th_send_packet(const uint8_t *payload, size_t len)
 {
     /* Worst case: one code per 254 decoded bytes, an extra code, delimiters.
      * Encode payload and CRC directly; no second decoded packet buffer. */

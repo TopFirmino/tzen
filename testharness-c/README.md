@@ -126,8 +126,7 @@ frame before returning; its pointer expires on return. Report partial writes as
 failure. Framing is `0x00 | COBS(protobuf + CRC16-CCITT-FALSE) | 0x00`, with CRC
 high byte first. `TZEN_TH_MAX_PACKET_SIZE` bounds decoded payload including CRC
 (default 256); reserve at least 91 bytes for the current maximum TTP message
-plus CRC. Raw `tzen_th_send_packet` permits empty payloads and uses bounded stack
-storage. There are no explicit heap allocations in the harness.
+plus CRC. Framing is handled internally using bounded stack storage. There are no explicit heap allocations in the harness.
 
 A failed transport callback makes `tzen_th_transport_ok()` false until reinit;
 internal protocol encoding/capacity failure also marks failure. Invalid raw-send

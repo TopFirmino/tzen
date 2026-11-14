@@ -6,8 +6,19 @@ build-backend = "setuptools.build_meta"
 name = "tzen"
 version = "0.1.0"
 description = "Cooperative embedded test harness client over CRC-protected TTP"
+readme = "python/tzen/README.md"
 requires-python = ">=3.10"
-dependencies = ["protobuf>=7.35.0,<8", "pyserial>=3.5,<4"]
+dependencies = ["protobuf>=7.35.0,<8", "pyserial>=3.5,<4", "pytest>=8,<10", "tomli>=2; python_version < '3.11'"]
+
+[project.entry-points.pytest11]
+tzen = "tzen.plugin"
 
 [tool.setuptools]
 packages = ["tzen", "ttp", "ttp.python", "ttp.python.generated"]
+package-dir = {tzen = "python/tzen"}
+
+[tool.setuptools.package-data]
+tzen = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests", "tzen/tests", "ttp/tests", "testharness-c/tests"]

@@ -1,0 +1,9 @@
+[tzen]
+command_timeout = 5.0
+test_timeout = 15.0
+
+[tzen.transport]
+class = "examples.Host.python.pipe_transport:PipeTransport"
+
+[tzen.transport.parameters]
+executable = "examples/Host/C/tzen_host.exe"

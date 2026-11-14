@@ -7,3 +7,7 @@ __pycache__
 
 examples/Arduino/build/
 *.egg-info/
+build/
+dist/
+.validation/
+.pytest_cache/

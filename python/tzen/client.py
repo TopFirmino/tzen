@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import time
 from ttp.python import ttp
 from tzen import framing
+from .transport import TzenTransport
 
 
 class CommandError(RuntimeError):
@@ -37,7 +38,7 @@ class Client:
     The supplied transport must provide read(size), write(bytes), close(). Its
     read must return periodically (SerialTransport uses a 50 ms read timeout).
     """
-    def __init__(self, transport, timeout=5.0, max_queued_events=256):
+    def __init__(self, transport: TzenTransport, timeout=5.0, max_queued_events=256):
         if timeout <= 0 or max_queued_events <= 0:
             raise ValueError("timeout and queue bound must be positive")
         self.transport = transport
@@ -135,14 +136,21 @@ class Client:
         return self.request(ttp.make_sync_release(run_id, sync_id))
 
     def run(self, test, on_event=None, on_sync=None, timeout=15.0):
-        """Run by index/name. A sync callback returns True to release, False to abort.
+        """Run by index, name or discovered TestInfo.
+
+        A sync callback returns True to release, False to abort.
 
         No callback means automatic release. Timeout attempts abort then raises;
         disconnection can prevent confirmation of cleanup on the target.
         """
         if timeout <= 0:
             raise ValueError("run timeout must be positive")
-        info = next((t for t in self.discover() if t.name == test), None) if isinstance(test, str) else self.get_test_info(test)
+        if isinstance(test, TestInfo):
+            info = test
+        elif isinstance(test, str):
+            info = next((t for t in self.discover() if t.name == test), None)
+        else:
+            info = self.get_test_info(test)
         if info is None:
             raise KeyError(test)
         run_id = self.start(info.index)
@@ -153,7 +161,7 @@ class Client:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise TimeoutError("test run exceeded deadline")
-                event = self.receive(min(self.timeout, remaining))
+                event = self.receive(remaining)
                 if event.seq_id:
                     raise RuntimeError("unexpected command response in event stream")
                 if len(events) >= self.max_queued_events:

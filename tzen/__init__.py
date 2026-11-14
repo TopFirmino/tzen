@@ -1,5 +1,8 @@
-"""Tzen: discover and execute cooperative target tests over TTP."""
-from .client import Client, CommandError, TestInfo, TestResult
-from .transport import SerialTransport
+"""Source-checkout compatibility; the installed package lives in python/tzen."""
+from pathlib import Path
 
-__all__ = ["Client", "CommandError", "TestInfo", "TestResult", "SerialTransport"]
+__path__.append(str(Path(__file__).resolve().parents[1] / "python" / "tzen"))
+from .client import Client, CommandError, TestInfo, TestResult
+from .transport import SerialTransport, TzenTransport
+
+__all__ = ["Client", "CommandError", "TestInfo", "TestResult", "SerialTransport", "TzenTransport"]

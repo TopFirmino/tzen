@@ -4,7 +4,7 @@ A cooperative C test harness, controlled from Python over CRC-protected TTP.
 
 - `ttp/`: protocol schema, generated C/Python bindings and protobuf-only codecs.
 - `testharness-c/`: C11 harness with COBS/CRC16 framing, protected execution queues and cooperative workers.
-- `tzen/`: Python client, wire framing and USB serial communication.
+- `python/tzen/`: Python master, pytest plugin, wire framing and transport protocol.
 - `examples/Arduino/`: Mega 2560 firmware and Python example using the package.
 
 Install into your Python environment:
@@ -12,6 +12,14 @@ Install into your Python environment:
 ```powershell
 python -m pip install -e .
 ```
+
+See the [pytest plugin guide](python/tzen/README.md) for TOML configuration and
+custom `TzenTransport` implementations. Discover and execute slave tests with
+`python -m pytest --tzen-config path/to/board.toml -v`.
+
+For the C host example, build with `make -C examples/Host/C`, then run
+`python -m pytest --tzen-config examples/Host/tzen-host.toml -m tzen -v` from the repository
+root. Its intentional failure is reported as a failed pytest test.
 
 See [Arduino instructions](examples/Arduino/README.md) to build, flash and run.
 The current `tzen.c` implements RX/TX, discovery, execution, synchronization and
@@ -25,4 +33,5 @@ Local regression checks (gcc required for C tests):
 python -m unittest discover -s ttp/tests -v
 python -m unittest discover -s testharness-c/tests -v
 python -m unittest discover -s tzen/tests -v
+python -m pytest python/tests -q
 ```

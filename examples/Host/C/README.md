@@ -12,18 +12,22 @@ python -m pytest --tzen-config examples/Host/tzen-host.toml --collect-only -vv -
 python -m pytest --tzen-config examples/Host/tzen-host.toml -k "not Expected" -v --tzen-strict-docs --junitxml=examples/Host/results/passing.xml
 ```
 
-The declarations in `../python/case_host.py` document all three C tests.
-`Yield and pass` and `Expected failure` are documentation-only declarations:
-their Python bodies are never executed. `Synchronize and pass` has an explicit
-Python companion which uses a pytest fixture, waits for sync 42, writes and
-checks a host-side probe, releases C, then verifies its completion log.
+The `TzenTestCase` classes in `../python/case_host.py` document all three C tests.
+`TestYield` and `TestExpectedFailure` set `companion = False` and supply only
+documentation. `TestSynchronization` has three ordered `@step` methods: wait
+for sync 42, write/check a host-side probe, and release C. It obtains its probe
+from a pytest fixture in `setup` and checks C's completion log in `teardown`.
+Tzen automatically starts and finishes the single C run around the steps.
+All three synchronization steps are critical, so failures stop the sequence.
 The probe is a temporary file demonstrating host participation, not a physical
 voltage measurement. Fixture teardown checks that the host action occurred.
 
 The offline command imports declarations but never imports or opens the
 configured transport. Its JSON is marked unverified. Live collection validates
 the target names against the C registry, exports metadata and descriptions,
-and executes neither test bodies nor fixtures. `-vv` shows the descriptions.
+and executes neither test bodies nor fixtures. `-vv` shows the descriptions
+and ordered Python steps. JUnit includes per-step results in `tzen_steps`;
+add `-rA` to display successful Python step reports in the terminal.
 The passing execution command selects the two positive cases. Remove
 `-k "not Expected"` to include the intentional negative example: pytest then
 reports two passes and one failure, returning exit code 1 by design.

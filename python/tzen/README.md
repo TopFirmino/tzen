@@ -68,6 +68,86 @@ execution is rejected to avoid concurrent access to the same slave.
 
 ## Testcase documentation and Python companions
 
+### Class declarations and steps
+
+Use `TzenTestCase` for class-based testcases. The collector binds `target` to
+the exact C name; if omitted, the concrete Python class name is used.
+
+```python
+from tzen import TzenTestCase, step
+
+class TestAdcCalibration(TzenTestCase):
+    """Check ADC initialization, raw readings, and voltage tolerance."""
+
+    target = "adc.calibration"
+    requirements = ["REQ-ADC-001"]
+    tags = ["adc"]
+
+    def setup(self, adc):
+        self.adc = adc             # User-provided pytest fixture
+        self.channel = 0
+        self.expected_vref = 3300
+
+    @step("Initialize ADC peripheral and check status register", critical=True)
+    def init_peripheral(self):
+        assert self.adc.init(self.channel) == 0, "ADC failed to initialize"
+
+    @step("Read raw sample and verify non-zero", critical=True)
+    def read_sample(self):
+        self.raw = self.adc.read(self.channel)
+        assert 0 < self.raw < 4096, f"Out of range: {self.raw}"
+
+    @step("Convert to mV and check tolerance", critical=True)
+    def verify_voltage(self):
+        mv = self.adc.raw_to_mv(self.raw)
+        assert abs(mv - self.expected_vref) < 50, f"Drift too high: {mv} mV"
+```
+
+The `adc` fixture and firmware testcase are application-specific; the runnable
+host example uses `self.run.wait_sync(42)` and `self.run.release(42)`.
+
+Execution order is `setup()` -> start C -> decorated steps in declaration order
+-> successful C completion -> `teardown()`. Each pytest testcase has a fresh
+instance; `self` retains state between its steps. Tzen opens one C run around
+the whole sequence and exposes it as `self.run`, so classes do not need to
+manually enter `tzen_case.run()`. Python steps are not automatically mapped to
+C step numbers or sync IDs: synchronize explicitly where the application needs
+coordination. The C run must also finish successfully for the testcase to pass.
+
+`critical=False` is the default. An assertion failure in a non-critical step is
+recorded and subsequent steps continue, but the overall testcase fails.
+`critical=True` stops subsequent steps immediately on assertion failure.
+Unexpected exceptions stop the sequence regardless of criticality. An active
+C run is aborted on failure; unexecuted Python steps are reported as `not_run`.
+Mark prerequisite steps critical when subsequent steps depend on their results.
+`teardown()` runs even after failed or partial setup, after C completion or an
+abort attempt; write it to tolerate partially initialized resources. Ordinary
+pytest fixture finalizers also run. Use `setup`, not a custom constructor.
+
+`setup`, `teardown`, and step methods can request fixtures through named required
+parameters. Pytest prepares their combined fixture dependencies before setup;
+fixture creation is not deferred until the individual step. Methods must be
+synchronous instance methods; static/class methods, generators and async methods
+are rejected. Steps are not separate pytest items and cannot be independently
+selected or reordered. `-x` stops after a testcase, not after a non-critical step.
+
+A class with steps is a companion by default. Set `companion = False` for
+documentation-only classes: hooks and steps are then never executed. A class
+without steps defaults to documentation-only. Explicit `companion = True`
+without any steps is a collection error. Class docstrings, requirements, tags,
+and ordered step descriptions/critical flags are included in offline and live
+JSON exports. `--collect-only -vv` also displays the steps without constructing
+the class or executing fixtures. Step results appear in the call report and
+the JUnit `tzen_steps` property; use `-rA` to display passed-test report sections.
+
+Single inheritance is supported: inherited steps run first, decorated overrides
+keep their position, new steps append, and undecorated overrides remove an
+inherited step. Abstract classes are not collected; use an abstract base class
+or import reusable base classes from a helper module. Multiple testcase-base
+inheritance is rejected. Older function declarations remain supported below.
+
+### Function declarations and configuration
+
 Configure declaration files or directories, relative to the TOML file:
 
 ```toml
@@ -76,7 +156,7 @@ companion_paths = ["companions"]
 ```
 
 Directories load `case_*.py` recursively; an explicit `.py` file can have any
-name. Only decorated functions become declarations. A declaration matches the
+name. `TzenTestCase` subclasses and decorated functions become declarations. A declaration matches the
 exact name in the C registry; matching by index is deliberately avoided.
 Missing targets, ambiguous C names, and duplicate declarations are collection
 errors. Without a declaration, a C test still executes normally.

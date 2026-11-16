@@ -10,6 +10,7 @@ from pathlib import Path
 import sys
 from types import ModuleType
 from typing import Callable
+from .cases import TzenTestCase, Step, class_steps, class_fixtures
 
 
 @dataclass(frozen=True)
@@ -19,13 +20,24 @@ class Documentation:
     requirements: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
     companion: bool = False
+    steps: tuple[Step, ...] = ()
 
 
 @dataclass(frozen=True)
 class Declaration:
     documentation: Documentation
-    function: Callable
+    implementation: Callable
     source: Path
+
+
+def _validate_metadata(target, companion, requirements, tags):
+    if not isinstance(target, str) or not target.strip():
+        raise ValueError("testcase target must be a nonempty string")
+    if type(companion) is not bool:
+        raise ValueError("companion must be a boolean")
+    for name, values in (("requirements", requirements), ("tags", tags)):
+        if not isinstance(values, (list, tuple)) or not all(isinstance(v, str) and v.strip() for v in values):
+            raise ValueError(f"{name} must be a list or tuple of nonempty strings")
 
 
 def testcase(*, target: str, companion: bool = False,
@@ -36,13 +48,7 @@ def testcase(*, target: str, companion: bool = False,
     The target is the exact, unique name in the C registry. The docstring is
     the description. Companion functions must accept the tzen_case fixture.
     """
-    if not isinstance(target, str) or not target.strip():
-        raise ValueError("testcase target must be a nonempty string")
-    if type(companion) is not bool:
-        raise ValueError("companion must be a boolean")
-    for name, values in (("requirements", requirements), ("tags", tags)):
-        if not isinstance(values, (list, tuple)) or not all(isinstance(v, str) and v.strip() for v in values):
-            raise ValueError(f"{name} must be a list or tuple of nonempty strings")
+    _validate_metadata(target, companion, requirements, tags)
 
     def decorate(function):
         if not inspect.isfunction(function) or inspect.iscoroutinefunction(function) or inspect.isgeneratorfunction(function):
@@ -88,13 +94,28 @@ def load_declarations(paths: tuple[Path, ...]) -> tuple[dict[str, Declaration], 
             sys.modules.pop(name, None)
             raise
         modules.append(module)
-        for function in vars(module).values():
-            doc = getattr(function, "__tzen_documentation__", None)
-            if not isinstance(doc, Documentation) or function.__module__ != name:
+        for implementation in vars(module).values():
+            if inspect.isclass(implementation) and issubclass(implementation, TzenTestCase) and implementation is not TzenTestCase:
+                if implementation.__module__ != name or inspect.isabstract(implementation):
+                    continue
+                steps = class_steps(implementation)
+                class_fixtures(implementation, steps)
+                target = implementation.target if implementation.target is not None else implementation.__name__
+                companion = bool(steps) if implementation.companion is None else implementation.companion
+                _validate_metadata(target, companion, implementation.requirements, implementation.tags)
+                doc = Documentation(
+                    target, inspect.cleandoc(implementation.__dict__.get("__doc__") or ""),
+                    tuple(implementation.requirements), tuple(implementation.tags), companion, steps,
+                )
+                if companion and not steps:
+                    raise ValueError(f"Companion class {implementation.__name__} has no @step methods")
+            else:
+                doc = getattr(implementation, "__tzen_documentation__", None)
+            if not isinstance(doc, Documentation) or implementation.__module__ != name:
                 continue
             if doc.target in declarations:
                 raise ValueError(f"Duplicate declaration for {doc.target!r}")
-            declarations[doc.target] = Declaration(doc, function, path)
+            declarations[doc.target] = Declaration(doc, implementation, path)
     return declarations, modules
 
 
@@ -107,3 +128,15 @@ def write_documentation(path: Path, records: list[dict], *, verified: bool) -> N
 
 def documentation_record(declaration: Declaration) -> dict:
     return {**asdict(declaration.documentation), "source": str(declaration.source)}
+
+
+def collection_description(declaration: Declaration) -> str:
+    """Display the Python procedure in pytest's verbose collection tree."""
+    doc = declaration.documentation
+    description = doc.description
+    if doc.steps:
+        description += "\n\nPython steps:\n" + "\n".join(
+            f"{index}. {step.description}" + (" [critical]" if step.critical else "")
+            for index, step in enumerate(doc.steps, 1)
+        )
+    return description

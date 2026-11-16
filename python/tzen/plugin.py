@@ -5,14 +5,19 @@ from pathlib import Path
 from functools import wraps
 from types import ModuleType
 import warnings
+import inspect
+import json
+from dataclasses import asdict
 
 import pytest
 from ttp.python import ttp
 
 from .client import Client, TestInfo
 from .config import Settings
-from .declarations import load_declarations, documentation_record, write_documentation
+from .declarations import load_declarations, documentation_record, write_documentation, collection_description
 from .execution import RemoteFailure, TzenCase
+from .cases import TzenTestCase, class_fixtures
+from .steps import StepFailure, execute_steps
 
 
 def pytest_addoption(parser):
@@ -93,7 +98,8 @@ class Slave(pytest.Module):
             # Reject ambiguous symbols rather than silently choose a definition.
             for module in modules:
                 for name, value in vars(module).items():
-                    if name.startswith("__") or hasattr(value, "__tzen_documentation__"):
+                    if (name.startswith("__") or hasattr(value, "__tzen_documentation__")
+                            or (inspect.isclass(value) and issubclass(value, TzenTestCase))):
                         continue
                     previous = vars(self.module_object).get(name, value)
                     if previous is not value:
@@ -112,9 +118,24 @@ class Slave(pytest.Module):
     @staticmethod
     def _function(declaration):
         if declaration is not None and declaration.documentation.companion:
-            function = declaration.function
+            function = declaration.implementation
             if any(mark.name == "parametrize" for mark in getattr(function, "pytestmark", ())):
                 raise ValueError("Companion parametrization is not supported; one declaration binds one C testcase")
+
+            if inspect.isclass(function):
+                steps = declaration.documentation.steps
+                names = dict.fromkeys(("tzen_case", "request", *class_fixtures(function, steps)))
+
+                def execute_class(**kwargs):
+                    execute_steps(function, steps, kwargs["tzen_case"], kwargs,
+                                  kwargs["request"].node.step_results)
+
+                execute_class.__signature__ = inspect.Signature([
+                    inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY) for name in names
+                ])
+                execute_class.__doc__ = collection_description(declaration)
+                execute_class.pytestmark = getattr(function, "pytestmark", [])
+                return execute_class
 
             @wraps(function)
             def execute(**kwargs):
@@ -129,7 +150,7 @@ class Slave(pytest.Module):
                 pass
 
         if declaration is not None:
-            execute.__doc__ = declaration.documentation.description
+            execute.__doc__ = collection_description(declaration)
         return execute
 
 
@@ -150,6 +171,7 @@ class SlaveItem(pytest.Function):
         super().__init__(**kwargs)
         self.test = test
         self.declaration = declaration
+        self.step_results = []
         self.add_marker("tzen")
         self.documentation = (
             documentation_record(declaration) if declaration else
@@ -159,7 +181,7 @@ class SlaveItem(pytest.Function):
         self.user_properties.append(("tzen_documentation", self.documentation["description"]))
 
     def repr_failure(self, excinfo, style=None):
-        if isinstance(excinfo.value, RemoteFailure):
+        if isinstance(excinfo.value, (RemoteFailure, StepFailure)):
             return str(excinfo.value)
         return super().repr_failure(excinfo)
 
@@ -206,6 +228,14 @@ def pytest_runtest_makereport(item, call):
     # Make slave diagnostics visible on the call report, not only teardown.
     report = yield
     if isinstance(item, SlaveItem) and call.when == "call":
+        if item.step_results:
+            report.sections.append(("Tzen Python steps", "\n".join(
+                f"{result.outcome.upper()}: {result.description}"
+                + (f" — {result.message}" if result.message else "") for result in item.step_results
+            )))
+            serialized = json.dumps([asdict(result) for result in item.step_results])
+            item.user_properties.append(("tzen_steps", serialized))
+            report.user_properties.append(("tzen_steps", serialized))
         case = item.funcargs.get("tzen_case")
         if case is not None and case.execution is not None:
             logs = []

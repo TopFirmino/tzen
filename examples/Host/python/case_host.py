@@ -13,17 +13,27 @@ class TestYield(TzenTestCase):
     """
 
     target = "Yield and pass"
-    requirements = ["HOST-YIELD-001"]
-    tags = ["scheduler"]
     companion = False
 
 
 @pytest.fixture
-def host_probe(tmp_path):
+def host_probe(tmp_path, tzen_case):
     """A host-side resource with normal pytest setup and teardown."""
     path = tmp_path / "sync-observed.txt"
     yield path
     assert path.read_text() == "sync 42 observed before release"
+    execution = tzen_case.execution
+    if execution is not None and execution.result is not None and execution.result.passed:
+        assert any(event.WhichOneof("payload") == "log" and
+                   event.log.message == "Yielding test completed" for event in execution.events)
+
+
+@pytest.fixture
+def temporary_probe(tmp_path):
+    path = tmp_path / "temporary-probe.txt"
+    path.touch()
+    yield path
+    path.unlink()
 
 
 class TestSynchronization(TzenTestCase):
@@ -34,10 +44,8 @@ class TestSynchronization(TzenTestCase):
     """
 
     target = "Synchronize and pass"
-    requirements = ["HOST-SYNC-001"]
-    tags = ["synchronization"]
 
-    def setup(self, host_probe):
+    def __init__(self, host_probe):
         self.probe = host_probe
 
     @step("Wait for C synchronization point 42", critical=True)
@@ -46,19 +54,17 @@ class TestSynchronization(TzenTestCase):
         assert self.run.result is None
 
     @step("Perform and verify the host-side action", critical=True)
-    def verify_host_action(self):
+    def verify_host_action(self, temporary_probe):
+        self.temporary_probe = temporary_probe
+        assert temporary_probe.exists()
         self.probe.write_text("sync 42 observed before release")
         assert self.probe.exists()
 
     @step("Release C to finish its remaining steps", critical=True)
     def release_target(self):
+        assert not self.temporary_probe.exists(), "Step fixture was not finalized"
         self.run.release(42)
 
-    def teardown(self):
-        # C has finished or abort has been attempted before this hook runs.
-        if self.run is not None and self.run.result is not None and self.run.result.passed:
-            assert any(event.WhichOneof("payload") == "log" and
-                       event.log.message == "Yielding test completed" for event in self.run.events)
 
 
 class TestExpectedFailure(TzenTestCase):
@@ -70,6 +76,4 @@ class TestExpectedFailure(TzenTestCase):
     """
 
     target = "Expected failure"
-    requirements = ["HOST-FAIL-001"]
-    tags = ["negative"]
     companion = False

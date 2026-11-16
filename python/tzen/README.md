@@ -80,10 +80,8 @@ class TestAdcCalibration(TzenTestCase):
     """Check ADC initialization, raw readings, and voltage tolerance."""
 
     target = "adc.calibration"
-    requirements = ["REQ-ADC-001"]
-    tags = ["adc"]
 
-    def setup(self, adc):
+    def __init__(self, adc):
         self.adc = adc             # User-provided pytest fixture
         self.channel = 0
         self.expected_vref = 3300
@@ -106,8 +104,9 @@ class TestAdcCalibration(TzenTestCase):
 The `adc` fixture and firmware testcase are application-specific; the runnable
 host example uses `self.run.wait_sync(42)` and `self.run.release(42)`.
 
-Execution order is `setup()` -> start C -> decorated steps in declaration order
--> successful C completion -> `teardown()`. Each pytest testcase has a fresh
+Execution order is constructor fixture setup -> `__init__` -> start C ->
+decorated steps in declaration order -> successful C completion -> testcase
+fixture teardown. Each pytest testcase has a fresh
 instance; `self` retains state between its steps. Tzen opens one C run around
 the whole sequence and exposes it as `self.run`, so classes do not need to
 manually enter `tzen_case.run()`. Python steps are not automatically mapped to
@@ -120,24 +119,34 @@ recorded and subsequent steps continue, but the overall testcase fails.
 Unexpected exceptions stop the sequence regardless of criticality. An active
 C run is aborted on failure; unexecuted Python steps are reported as `not_run`.
 Mark prerequisite steps critical when subsequent steps depend on their results.
-`teardown()` runs even after failed or partial setup, after C completion or an
-abort attempt; write it to tolerate partially initialized resources. Ordinary
-pytest fixture finalizers also run. Use `setup`, not a custom constructor.
+Testcases have no `setup` or `teardown` hooks. Acquisition and cleanup belong
+exclusively to fixtures: use `yield` or `request.addfinalizer`. An optional
+`__init__` receives fixtures through named required parameters and initializes
+instance state. A failed constructor still finalizes its fixtures.
 
-`setup`, `teardown`, and step methods can request fixtures through named required
-parameters. Pytest prepares their combined fixture dependencies before setup;
-fixture creation is not deferred until the individual step. Methods must be
+Constructor fixtures remain alive until the testcase ends. Function-scoped
+fixtures requested only by a step are created just before that step and finalized
+immediately afterward, including on failure. Dependencies close in reverse
+acquisition order. Later steps requesting the same fixture get a fresh instance.
+A step requesting a constructor-owned or autouse fixture reuses it without
+ending its testcase lifetime. Explicit module/session scopes retain their normal
+pytest lifetime. Fixture setup/cleanup errors stop the sequence regardless of
+the step's critical flag. Fixtures for unexecuted steps are never created.
+
+Both constructors and step methods use named required fixture parameters.
+Only constructor fixtures are prepared before class construction. Methods must be
 synchronous instance methods; static/class methods, generators and async methods
 are rejected. Steps are not separate pytest items and cannot be independently
 selected or reordered. `-x` stops after a testcase, not after a non-critical step.
 
 A class with steps is a companion by default. Set `companion = False` for
-documentation-only classes: hooks and steps are then never executed. A class
+documentation-only classes: constructors and steps are then never executed. A class
 without steps defaults to documentation-only. Explicit `companion = True`
-without any steps is a collection error. Class docstrings, requirements, tags,
-and ordered step descriptions/critical flags are included in offline and live
+without any steps is a collection error. Class docstrings and ordered step
+descriptions/critical flags are included in offline and live
 JSON exports. `--collect-only -vv` also displays the steps without constructing
-the class or executing fixtures. Step results appear in the call report and
+the class or executing fixtures. Requirements/tags fields are not part of the
+execution declaration API. Step results appear in the call report and
 the JUnit `tzen_steps` property; use `-rA` to display passed-test report sections.
 
 Single inheritance is supported: inherited steps run first, decorated overrides
@@ -164,7 +173,7 @@ errors. Without a declaration, a C test still executes normally.
 ```python
 from tzen import testcase
 
-@testcase(target="C-only test", requirements=["REQ-001"], tags=["startup"])
+@testcase(target="C-only test")
 def description():
     """Verify successful startup.
 
@@ -173,7 +182,7 @@ def description():
     Expected result: every C step succeeds.
     """
 
-@testcase(target="GPIO test", companion=True, requirements=["REQ-002"])
+@testcase(target="GPIO test", companion=True)
 def check_gpio(tzen_case, multimeter):
     """Verify the output voltage while C waits at sync 10."""
     multimeter.configure_voltage()
@@ -208,7 +217,7 @@ Use absolute imports for helpers. Python test parametrization and parametrized
 fixtures are not supported for companions yet. Explicit local collection does
 not collect decorated declarations a second time.
 
-Descriptions come from docstrings. Requirements, tags, execution type, target
+Descriptions come from docstrings. Execution type, target
 name, source path, and (online) C index/step count are exported as JSON.
 Each collected item exposes a `documentation` dictionary to other plugins.
 JUnit includes the description along with execution identity.

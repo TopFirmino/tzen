@@ -17,8 +17,6 @@ from .cases import TzenTestCase, Step, class_steps, class_fixtures
 class Documentation:
     target: str
     description: str
-    requirements: tuple[str, ...] = ()
-    tags: tuple[str, ...] = ()
     companion: bool = False
     steps: tuple[Step, ...] = ()
 
@@ -30,25 +28,20 @@ class Declaration:
     source: Path
 
 
-def _validate_metadata(target, companion, requirements, tags):
+def _validate_metadata(target, companion):
     if not isinstance(target, str) or not target.strip():
         raise ValueError("testcase target must be a nonempty string")
     if type(companion) is not bool:
         raise ValueError("companion must be a boolean")
-    for name, values in (("requirements", requirements), ("tags", tags)):
-        if not isinstance(values, (list, tuple)) or not all(isinstance(v, str) and v.strip() for v in values):
-            raise ValueError(f"{name} must be a list or tuple of nonempty strings")
 
 
-def testcase(*, target: str, companion: bool = False,
-             requirements: tuple[str, ...] | list[str] = (),
-             tags: tuple[str, ...] | list[str] = ()):
+def testcase(*, target: str, companion: bool = False):
     """Describe a C testcase; only companion=True executes the Python function.
 
     The target is the exact, unique name in the C registry. The docstring is
     the description. Companion functions must accept the tzen_case fixture.
     """
-    _validate_metadata(target, companion, requirements, tags)
+    _validate_metadata(target, companion)
 
     def decorate(function):
         if not inspect.isfunction(function) or inspect.iscoroutinefunction(function) or inspect.isgeneratorfunction(function):
@@ -58,7 +51,7 @@ def testcase(*, target: str, companion: bool = False,
         if companion and "tzen_case" not in inspect.signature(function).parameters:
             raise ValueError("a companion must accept the tzen_case fixture")
         function.__tzen_documentation__ = Documentation(
-            target, inspect.getdoc(function) or "", tuple(requirements), tuple(tags), companion,
+            target, inspect.getdoc(function) or "", companion,
         )
         # These functions are collected only through the slave, never twice.
         function.__test__ = False
@@ -102,10 +95,10 @@ def load_declarations(paths: tuple[Path, ...]) -> tuple[dict[str, Declaration], 
                 class_fixtures(implementation, steps)
                 target = implementation.target if implementation.target is not None else implementation.__name__
                 companion = bool(steps) if implementation.companion is None else implementation.companion
-                _validate_metadata(target, companion, implementation.requirements, implementation.tags)
+                _validate_metadata(target, companion)
                 doc = Documentation(
                     target, inspect.cleandoc(implementation.__dict__.get("__doc__") or ""),
-                    tuple(implementation.requirements), tuple(implementation.tags), companion, steps,
+                    companion, steps,
                 )
                 if companion and not steps:
                     raise ValueError(f"Companion class {implementation.__name__} has no @step methods")

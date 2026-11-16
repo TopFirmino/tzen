@@ -16,7 +16,10 @@ The `TzenTestCase` classes in `../python/case_host.py` document all three C test
 `TestYield` and `TestExpectedFailure` set `companion = False` and supply only
 documentation. `TestSynchronization` has three ordered `@step` methods: wait
 for sync 42, write/check a host-side probe, and release C. It obtains its probe
-from a pytest fixture in `setup` and checks C's completion log in `teardown`.
+from a pytest fixture in `__init__`; its finalizer checks C's completion log.
+The host-action step also requests `temporary_probe`, which is removed when
+the step ends. The release step checks that it is already gone. There are no
+testcase setup/teardown hooks.
 Tzen automatically starts and finishes the single C run around the steps.
 All three synchronization steps are critical, so failures stop the sequence.
 The probe is a temporary file demonstrating host participation, not a physical

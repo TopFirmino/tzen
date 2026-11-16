@@ -17,17 +17,18 @@ from tzen import TzenTestCase, step
 
 @pytest.fixture
 def resource():
-    yield 7
+    order = []
+    yield {"value": 7, "order": order}
+    Path("order.json").write_text(__import__("json").dumps(order))
     Path("fixture_closed").touch()
 
 class TestRemote(TzenTestCase):
     """Exercise a class-based companion with shared state."""
     target = "remote"
-    requirements = ["REQ-CLASS"]
 
-    def setup(self, resource):
-        self.value = resource
-        self.order = []
+    def __init__(self, resource):
+        self.value = resource["value"]
+        self.order = resource["order"]
 
     @step("Wait for C", critical=True)
     def z_wait(self):
@@ -46,8 +47,6 @@ class TestRemote(TzenTestCase):
         self.order.append("release")
         self.run.release(42)
 
-    def teardown(self):
-        Path("order.json").write_text(__import__("json").dumps(self.order))
 '''
 
 
@@ -91,7 +90,7 @@ def test_unexpected_error_stops_noncritical_step(pytester):
 
 
 def test_collect_does_not_construct_or_execute_class(pytester):
-    companion(pytester, SOURCE.replace("self.value = resource", 'raise AssertionError("setup must not run")'))
+    companion(pytester, SOURCE.replace('self.value = resource["value"]', 'raise AssertionError("setup must not run")'))
     result = pytester.runpytest("--collect-only", "--tzen-docs=docs.json", "-q")
     assert result.ret == 0
     assert "1 test collected" in result.stdout.str()
@@ -100,8 +99,8 @@ def test_collect_does_not_construct_or_execute_class(pytester):
     assert "execute_test" not in trace(pytester)
 
 
-def test_setup_failure_runs_cleanup_without_starting_c(pytester):
-    companion(pytester, SOURCE.replace("self.value = resource", 'self.order = []\n        raise RuntimeError("setup failed")'))
+def test_constructor_failure_runs_cleanup_without_starting_c(pytester):
+    companion(pytester, SOURCE.replace('self.value = resource["value"]', 'self.order = resource["order"]\n        raise RuntimeError("setup failed")'))
     pytester.runpytest("-q").assert_outcomes(failed=1)
     assert "execute_test" not in trace(pytester)
     assert (pytester.path / "order.json").exists()
@@ -135,7 +134,7 @@ def test_no_duplicate_class_in_local_collection(pytester):
 
 
 @pytest.mark.parametrize("change", [
-    ('def setup(self, resource):', 'def __init__(self, resource):'),
+    ('def __init__(self, resource):', 'def setup(self, resource):'),
     ('def z_wait(self):', 'async def z_wait(self):'),
     ('def z_wait(self):', 'def z_wait(self, *args):'),
     ('def z_wait(self):', 'def z_wait(self, value=1):'),

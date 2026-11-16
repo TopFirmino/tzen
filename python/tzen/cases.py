@@ -49,22 +49,14 @@ class TzenTestCase:
 
     Set target to the exact C name (defaults to the concrete class name).
     Classes with steps are companions by default; companion=False makes the
-    class documentation-only. setup and teardown may request pytest fixtures.
+    class documentation-only. __init__ and steps may request pytest fixtures.
     The runner assigns run during execution and keeps state on self between
-    steps. Do not override __init__; initialize resources in setup instead.
+    steps. Resource cleanup belongs to fixture finalizers, not testcase hooks.
     """
 
     __test__ = False
     target: str | None = None
     companion: bool | None = None
-    requirements: tuple[str, ...] = ()
-    tags: tuple[str, ...] = ()
-
-    def setup(self):
-        """Prepare Python resources before starting C."""
-
-    def teardown(self):
-        """Clean up after success, failure, or partially completed setup."""
 
 
 def class_steps(cls: type[TzenTestCase]) -> tuple[Step, ...]:
@@ -77,6 +69,8 @@ def class_steps(cls: type[TzenTestCase]) -> tuple[Step, ...]:
     for base in reversed(cls.__mro__):
         if base in (object, TzenTestCase):
             continue
+        if any(name in vars(base) for name in ("setup", "teardown", "requirements", "tags")):
+            raise ValueError("Testcases use __init__ and steps; setup/teardown hooks and requirements/tags fields are not supported")
         if len([parent for parent in base.__bases__ if issubclass(parent, TzenTestCase)]) > 1:
             raise ValueError("Multiple TzenTestCase bases are not supported")
         for name, value in vars(base).items():
@@ -94,12 +88,11 @@ def class_steps(cls: type[TzenTestCase]) -> tuple[Step, ...]:
 
 
 def class_fixtures(cls: type[TzenTestCase], steps: tuple[Step, ...]) -> tuple[str, ...]:
-    if cls.__init__ is not object.__init__ or cls.__new__ is not object.__new__:
-        raise ValueError("Use setup() instead of a custom testcase constructor")
-    names = []
-    for name in ("setup", *(step.name for step in steps), "teardown"):
-        method = inspect.getattr_static(cls, name)
-        for fixture in validate_method(method):
-            if fixture not in names:
-                names.append(fixture)
-    return tuple(names)
+    """Validate step signatures, returning only testcase-lifetime fixtures."""
+    if cls.__new__ is not object.__new__:
+        raise ValueError("Custom __new__ is not supported")
+    for step in steps:
+        validate_method(inspect.getattr_static(cls, step.name))
+    if cls.__init__ is object.__init__:
+        return ()
+    return validate_method(inspect.getattr_static(cls, "__init__"))

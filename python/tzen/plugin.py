@@ -175,7 +175,7 @@ class SlaveItem(pytest.Function):
         self.add_marker("tzen")
         self.documentation = (
             documentation_record(declaration) if declaration else
-            dict(target=test.name, description="", requirements=[], tags=[], companion=False, source=None)
+            dict(target=test.name, description="", companion=False, source=None)
         )
         self.documentation.update(index=test.index, total_steps=test.total_steps, nodeid=self.nodeid)
         self.user_properties.append(("tzen_documentation", self.documentation["description"]))

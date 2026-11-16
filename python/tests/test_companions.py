@@ -28,7 +28,7 @@ def instrument(tmp_path):
     yield path
     assert path.read_text() == "verified"
 
-@testcase(target="remote", companion=True, requirements=["REQ-1"], tags=["io"])
+@testcase(target="remote", companion=True)
 def remote(tzen_case, instrument):
     """Check the host action while C waits at sync 42."""
     with tzen_case.run() as run:
@@ -49,7 +49,7 @@ def test_companion_fixtures_and_documentation(pytester):
     document = json.loads((pytester.path / "docs.json").read_text())
     assert document["verified_against_slave"] is True
     record, = document["testcases"]
-    assert record["requirements"] == ["REQ-1"]
+    assert "requirements" not in record and "tags" not in record
     assert record["companion"] is True
     assert record["nodeid"] == "slave::remote[0]"
     assert record["description"].startswith("Check the host action")
@@ -67,7 +67,7 @@ def test_collect_only_does_not_execute_companion_or_fixture(pytester):
 def test_documentation_only_function_is_never_called(pytester):
     companion(pytester, '''
 from tzen import testcase
-@testcase(target="remote", requirements=["REQ-STATIC"])
+@testcase(target="remote")
 def describe():
     """C owns all execution for this test."""
     raise AssertionError("documentation-only body must never execute")

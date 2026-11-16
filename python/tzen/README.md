@@ -1,294 +1,222 @@
 # Tzen pytest plugin
 
-Install from the repository root with `python -m pip install -e .`.
-The installed package registers its pytest plugin automatically. Python 3.10+
-and pytest 8 or 9 are supported.
+Install with **python -m pip install -e .** from the repository root.
+The plugin registers automatically. Python 3.10+ and pytest 8 or 9 are supported.
 
-Create a `tzen.toml` in your test directory:
+## Declare tests in normal pytest files
 
-```toml
-[tzen]
-command_timeout = 5.0
-test_timeout = 30.0
-max_events = 256
+Create a file such as tests/test_board.py and select an explicit testcase type:
 
-[tzen.transport]
-class = "tzen.transport:SerialTransport"
+    from tzen import TzenRemoteTestCase, TzenCompanionTestCase, step
 
-[tzen.transport.parameters]
-port = "COM5"
-baudrate = 115200
-reset_wait = 2.0
-```
+    class TestStartup(TzenRemoteTestCase):
+        """Verify successful startup using only the C testcase."""
+        # Matches the C registry name "TestStartup".
 
-```shell
-python -m pytest --tzen-config tzen.toml --collect-only -q
-python -m pytest --tzen-config tzen.toml -v
-python -m pytest --tzen-config path/to/board.toml -v
-python -m pytest --tzen-config tzen.toml -k "example" --junitxml=results.xml
-```
+    class TestAdcCalibration(TzenCompanionTestCase):
+        """Check ADC samples while C waits for the host."""
+        target = "adc.calibration"  # Optional class-name override.
 
-The TOML file is configuration only. Pass it using `--tzen-config`, or place
-a `tzen.toml` in pytest's root directory for automatic configuration.
-With a configured slave and no positional test paths, only remote tests are
-collected; implicit working-directory and `testpaths` discovery is disabled.
-The slave appears as a session-level parent:
+        def __init__(self, adc):
+            self.adc = adc
 
-```text
-<Slave slave>
-  <SlaveItem example[0]>
-  <SlaveItem another example[1]>
-```
+        @step("Wait for ADC readiness", critical=True)
+        def wait_ready(self):
+            self.run.wait_sync(10)
 
-To include local tests, provide their paths explicitly, for example
-`python -m pytest tests/ --tzen-config board.toml`. Without a configured slave,
-pytest discovery is unchanged. Use `-m tzen` or `-m "not tzen"` to filter a
-mixed run, and `-k "example[0]"` to select a remote test. Marker filtering happens after
-discovery, so a configured slave is still contacted during collection.
-Remote IDs such as `slave::example[0]` are report identifiers, not filesystem
-paths: select remote tests with `-k` rather than positional node IDs.
-Local tests retain normal positional node-ID selection.
+        @step("Read and validate a sample")
+        def check_sample(self, measurement):
+            self.raw = measurement.read(self.adc)
+            assert 0 < self.raw < 4096
 
-Discovery opens the transport, asks the slave for its test count and metadata,
-and creates one pytest item per test. Node IDs end in `name[index]`, so duplicate
-names remain selectable. `--collect-only` still requires a connected slave but
-does not execute tests. `-k`, `-m tzen`, `-x`, and pytest reporting
-work normally. SUCCESS passes; FAIL and ABORTED fail. Logs and step results are
-attached to the call report, including failure output. JUnit records test index
-and run ID for completed runs.
+        @step("Release the embedded testcase", critical=True)
+        def release(self):
+            self.run.release(10)
 
-Tests run sequentially; C-only tests automatically release sync requests, while
-Python companions release them explicitly. Command timeout
-limits each command response; test timeout bounds waiting for execution events.
-Transport calls and best-effort abort can add their own bounded latency. On a
-protocol/transport error or timeout, subsequent tests on that connection are
-skipped because the target state is uncertain. The transport closes at pytest
-cleanup, including collection errors and collect-only. pytest-xdist parallel
-execution is rejected to avoid concurrent access to the same slave.
+The adc and measurement fixtures are application-specific. Define them in the
+test module or a normal conftest.py. See the runnable
+[host example](../../examples/Host/tests/test_host.py).
 
-## Testcase documentation and Python companions
+- **TzenRemoteTestCase:** C-only execution, without constructors or Python steps.
+- **TzenCompanionTestCase:** at least one decorated step and an optional
+  fixture-injecting constructor.
+- **TzenTestCase:** shared base, not a concrete declaration. Its descendants
+  must select one of the two execution types before collection.
+- Both types default to the concrete class name as their C target. Set target
+  only when the C name differs. There is no companion flag or requirements/tags
+  field.
 
-### Class declarations and steps
+## Configuration and invocation
 
-Use `TzenTestCase` for class-based testcases. The collector binds `target` to
-the exact C name; if omitted, the concrete Python class name is used.
+TOML configures only transport and execution limits:
 
-```python
-from tzen import TzenTestCase, step
+    [tzen]
+    command_timeout = 5.0
+    test_timeout = 30.0
+    max_events = 256
 
-class TestAdcCalibration(TzenTestCase):
-    """Check ADC initialization, raw readings, and voltage tolerance."""
+    [tzen.transport]
+    class = "tzen.transport:SerialTransport"
 
-    target = "adc.calibration"
+    [tzen.transport.parameters]
+    port = "COM5"
+    baudrate = 115200
+    reset_wait = 2.0
 
-    def __init__(self, adc):
-        self.adc = adc             # User-provided pytest fixture
-        self.channel = 0
-        self.expected_vref = 3300
+Use --tzen-config or a tzen.toml file in pytest's root directory:
 
-    @step("Initialize ADC peripheral and check status register", critical=True)
-    def init_peripheral(self):
-        assert self.adc.init(self.channel) == 0, "ADC failed to initialize"
+    python -m pytest tests/ --tzen-config board.toml --collect-only -vv
+    python -m pytest tests/ --tzen-config board.toml -v -rA
+    python -m pytest tests/test_board.py::TestAdcCalibration --tzen-config board.toml -v
+    python -m pytest tests/ --tzen-config board.toml -m tzen -k Calibration
 
-    @step("Read raw sample and verify non-zero", critical=True)
-    def read_sample(self):
-        self.raw = self.adc.read(self.channel)
-        assert 0 < self.raw < 4096, f"Out of range: {self.raw}"
+The removed companion_paths setting produces a configuration error. Test
+selection belongs to pytest.
 
-    @step("Convert to mV and check tolerance", critical=True)
-    def verify_voltage(self):
-        mv = self.adc.raw_to_mv(self.raw)
-        assert abs(mv - self.expected_vref) < 50, f"Drift too high: {mv} mV"
-```
+## Collection
 
-The `adc` fixture and firmware testcase are application-specific; the runnable
-host example uses `self.run.wait_sync(42)` and `self.run.release(42)`.
+Pytest uses its normal file rules (test_*.py, *_test.py, python_files),
+positional paths, testpaths, ignore rules, packages and conftest.py. Within
+these modules, Tzen recognizes classes by inheritance, not a Test name prefix.
+Abstract classes, imported helper classes, and classes explicitly declaring
+__test__ = False are ignored.
 
-Execution order is constructor fixture setup -> `__init__` -> start C ->
-decorated steps in declaration order -> successful C completion -> testcase
-fixture teardown. Each pytest testcase has a fresh
-instance; `self` retains state between its steps. Tzen opens one C run around
-the whole sequence and exposes it as `self.run`, so classes do not need to
-manually enter `tzen_case.run()`. Python steps are not automatically mapped to
-C step numbers or sync IDs: synchronize explicitly where the application needs
-coordination. The C run must also finish successfully for the testcase to pass.
+Each concrete declaration becomes one item in its actual Python module:
 
-`critical=False` is the default. An assertion failure in a non-critical step is
-recorded and subsequent steps continue, but the overall testcase fails.
-`critical=True` stops subsequent steps immediately on assertion failure.
-Unexpected exceptions stop the sequence regardless of criticality. An active
-C run is aborted on failure; unexecuted Python steps are reported as `not_run`.
-Mark prerequisite steps critical when subsequent steps depend on their results.
-Testcases have no `setup` or `teardown` hooks. Acquisition and cleanup belong
-exclusively to fixtures: use `yield` or `request.addfinalizer`. An optional
-`__init__` receives fixtures through named required parameters and initializes
-instance state. A failed constructor still finalizes its fixtures.
+    <Module test_board.py>
+      <TzenItem TestStartup>
+      <TzenItem TestAdcCalibration>
 
-Constructor fixtures remain alive until the testcase ends. Function-scoped
-fixtures requested only by a step are created just before that step and finalized
-immediately afterward, including on failure. Dependencies close in reverse
-acquisition order. Later steps requesting the same fixture get a fresh instance.
-A step requesting a constructor-owned or autouse fixture reuses it without
-ending its testcase lifetime. Explicit module/session scopes retain their normal
-pytest lifetime. Fixture setup/cleanup errors stop the sequence regardless of
-the step's critical flag. Fixtures for unexecuted steps are never created.
+The first live Tzen declaration opens the configured transport. The C registry
+is queried once per session and shared across modules. Classes match exact C
+names, never indices. Missing/ambiguous matches or duplicate target bindings are
+collection errors. Undeclared C tests are not appended. Without any Tzen
+declarations, no transport is opened.
 
-Both constructors and step methods use named required fixture parameters.
-Only constructor fixtures are prepared before class construction. Methods must be
-synchronous instance methods; static/class methods, generators and async methods
-are rejected. Steps are not separate pytest items and cannot be independently
-selected or reordered. `-x` stops after a testcase, not after a non-critical step.
+Ordinary Python tests are collected alongside Tzen tests. --tzen-config never
+replaces or expands collection paths. From this repository root, pass
+examples/Host/tests to run the host example instead of development tests.
+Exact positional node IDs, -k and -m tzen work normally. Name/marker filtering
+happens after collection, so live discovery still needs the slave even if
+all Tzen items are subsequently deselected.
 
-A class with steps is a companion by default. Set `companion = False` for
-documentation-only classes: constructors and steps are then never executed. A class
-without steps defaults to documentation-only. Explicit `companion = True`
-without any steps is a collection error. Class docstrings and ordered step
-descriptions/critical flags are included in offline and live
-JSON exports. `--collect-only -vv` also displays the steps without constructing
-the class or executing fixtures. Requirements/tags fields are not part of the
-execution declaration API. Step results appear in the call report and
-the JUnit `tzen_steps` property; use `-rA` to display passed-test report sections.
+Fixtures stay in their source modules and directory scopes. Two modules may
+define different fixtures with the same name. Package-relative imports and
+pytest assertion rewriting follow normal pytest behavior. Testcase and fixture
+parametrization are not supported yet. Live pytest-xdist execution is rejected
+to prevent multiple workers from accessing one slave.
 
-Single inheritance is supported: inherited steps run first, decorated overrides
-keep their position, new steps append, and undecorated overrides remove an
-inherited step. Abstract classes are not collected; use an abstract base class
-or import reusable base classes from a helper module. Multiple testcase-base
-inheritance is rejected. Older function declarations remain supported below.
+## Execution and fixture lifetimes
 
-### Function declarations and configuration
+Every companion has a fresh instance. Steps execute in definition order and
+retain state on self. Execution is:
 
-Configure declaration files or directories, relative to the TOML file:
+1. Prepare constructor fixtures and call __init__, if defined.
+2. Start one C execution and expose it as self.run.
+3. Execute the decorated steps.
+4. Require successful C completion.
+5. Finalize testcase-lifetime fixtures.
 
-```toml
-[tzen]
-companion_paths = ["companions"]
-```
+Use self.run.wait_sync(id) and self.run.release(id) for explicit coordination.
+Python steps do not automatically correspond to C step numbers or sync IDs.
+C-only tests automatically release sync requests.
 
-Directories load `case_*.py` recursively; an explicit `.py` file can have any
-name. `TzenTestCase` subclasses and decorated functions become declarations. A declaration matches the
-exact name in the C registry; matching by index is deliberately avoided.
-Missing targets, ambiguous C names, and duplicate declarations are collection
-errors. Without a declaration, a C test still executes normally.
+Constructor fixtures live until the testcase ends, even if construction fails.
+Function-scoped fixtures first requested by a step are acquired just before
+that step and finalized immediately afterward, including on failure. Dependencies
+close in reverse acquisition order; later steps receive fresh instances.
+Constructor-owned/autouse fixtures are reused without premature cleanup.
+Explicit module/session scopes retain their normal pytest lifetime.
+Unexecuted steps never acquire their step-only fixtures.
 
-```python
-from tzen import testcase
+Use fixture yield or request.addfinalizer for cleanup. Testcases have no
+setup/teardown hooks. Constructors and steps use named required fixture
+parameters. Methods must be synchronous instance methods; async/generator,
+static and class methods are rejected.
 
-@testcase(target="C-only test")
-def description():
-    """Verify successful startup.
+A non-critical assertion failure is recorded and allows subsequent steps to
+run, but fails the overall testcase. critical=True stops the sequence immediately.
+Unexpected exceptions and fixture setup/finalization errors always stop.
+Active C execution is aborted on failure. Only C SUCCESS and successful Python
+execution produce a pass. Steps are not separate pytest items and cannot be
+selected individually; -x takes effect after the whole testcase.
 
-    Preconditions: board powered.
-    Procedure: execute the C startup checks.
-    Expected result: every C step succeeds.
-    """
+Logs and results belong to the combined item. -rA shows successful report
+sections. JUnit includes tzen_steps, the description and execution identity.
+Single inheritance preserves base step order: decorated overrides keep their
+position, undecorated overrides remove inherited steps, and new steps append.
+Use imported or abstract base classes for reuse; multiple testcase bases are
+rejected.
 
-@testcase(target="GPIO test", companion=True)
-def check_gpio(tzen_case, multimeter):
-    """Verify the output voltage while C waits at sync 10."""
-    multimeter.configure_voltage()
-    with tzen_case.run() as run:
-        run.wait_sync(10)
-        assert multimeter.voltage() > 3.0
-        run.release(10)
-    assert run.result.passed
-```
+## Documentation
 
-`multimeter` is a user-defined pytest fixture. Documentation-only is the
-default: that function's body is never called. `companion=True` explicitly
-enables Python execution and requires the `tzen_case` argument. Each pair is
-one pytest item under the slave and executes the C counterpart exactly once.
-Normal return requires C SUCCESS as well as successful Python assertions.
-An absent C execution cannot silently pass. Non-successful C completion fails
-the item, even if Python attempts to ignore it.
+Docstrings describe testcases; @step supplies procedure descriptions and
+criticality. Each item exposes a documentation dictionary. Live JSON also
+includes the matched C index and step count.
 
-Python companions control synchronization explicitly: unexpected, missing, or
-unreleased sync points fail the test. C-only tests retain automatic release.
-On a Python failure, Tzen attempts abort and consumes the terminal event before
-another test starts; an uncertain connection disables further execution.
-The test timeout bounds protocol waits. It cannot interrupt arbitrary blocking
-Python/instrument code, so instrument fixtures must configure their own I/O
-timeouts. Do not launch a background thread that reads the TTP transport.
+    # Live registry validation, without test or fixture execution:
+    python -m pytest tests/ --tzen-config board.toml --collect-only -vv --tzen-docs docs/live.json --tzen-strict-docs
 
-Define fixtures in the declaration files or in pytest's root `conftest.py`.
-Declaration modules share one synthetic slave module scope; conflicting module
-symbols are rejected, so put shared fixtures/helpers in an importable module.
-Nested `conftest.py` files in companion directories are not auto-discovered.
-Use absolute imports for helpers. Python test parametrization and parametrized
-fixtures are not supported for companions yet. Explicit local collection does
-not collect decorated declarations a second time.
+    # Offline, using the same pytest collector, without a transport:
+    python -m tzen docs tests/ --output docs/offline.json -q
 
-Descriptions come from docstrings. Execution type, target
-name, source path, and (online) C index/step count are exported as JSON.
-Each collected item exposes a `documentation` dictionary to other plugins.
-JUnit includes the description along with execution identity.
+    # Equivalent direct pytest invocation:
+    python -m pytest tests/ --collect-only --tzen-offline --tzen-docs docs/offline.json
 
-```sh
-# Offline: imports declarations, never opens the target connection.
-python -m tzen docs --config board.toml --output docs/offline.json
+The offline CLI accepts additional pytest options such as -k or
+--tzen-strict-docs. Offline mode requires collect-only and marks exports
+verified_against_slave: false. It cannot verify registry matches. Successful
+live collection marks registry validation true; this means name matching, not
+firmware-version certification. Exports include selected Tzen items after
+filtering and are written only after successful collection. Missing descriptions
+warn by default or fail collection with --tzen-strict-docs.
 
-# Online: validates against firmware, without executing tests or fixtures.
-python -m pytest --tzen-config board.toml --collect-only -vv --tzen-docs docs/live.json --tzen-strict-docs
-```
-
-Offline exports are explicitly marked `verified_against_slave: false`; they
-contain only declared tests and cannot detect undocumented firmware tests.
-Online exports include selected tests after pytest filtering and are produced
-only after successful collection. `--tzen-strict-docs` rejects missing or empty
-descriptions; otherwise these produce a warning. Collection verification means
-name matching against the current registry, not firmware-version certification.
-The current wire protocol does not advertise mandatory companions, so it cannot
-detect a missing required companion file from C metadata alone.
-
-See the [host example](../../examples/Host/C/README.md) for a runnable companion.
+Collection imports test modules and conftests, so module-level code executes.
+It does not instantiate testcase classes, execute steps, or set up fixtures.
+Keep hardware I/O in fixtures/steps. The protocol currently has no C metadata
+advertising a mandatory Python companion.
 
 ## Custom transports
 
-`TzenTransport` is a runtime-checkable `typing.Protocol`. Explicit inheritance
-is optional; any class with the required methods can be used:
+TzenTransport is a runtime-checkable typing.Protocol. Explicit inheritance
+is optional; implement bounded byte operations:
 
-```python
-# my_board/transport.py (make this module importable in your environment)
-from tzen import TzenTransport
+    class BoardTransport:
+        def __init__(self, address: str):
+            # Open the connection; clean up if construction fails.
+            ...
 
-class BoardTransport(TzenTransport):
-    def __init__(self, address: str, channel: int = 0):
-        # Open your connection here; clean up if construction fails.
-        ...
+        def read(self, size: int = 1) -> bytes:
+            # Return at most size bytes; b"" means a bounded read timeout.
+            # Raise on disconnect. Never wait indefinitely.
+            ...
 
-    def read(self, size: int = 1) -> bytes:
-        # Return up to size bytes. Return b"" on a short read timeout.
-        # Raise on disconnect. Never wait indefinitely.
-        ...
+        def write(self, data: bytes) -> None:
+            # Send all bytes within a bounded time, or raise.
+            ...
 
-    def write(self, data: bytes) -> None:
-        # Send all bytes within a bounded time, or raise.
-        ...
+        def close(self) -> None:
+            # Release resources; repeated calls should be harmless.
+            ...
 
-    def close(self) -> None:
-        # Release the connection; repeated close calls should be harmless.
-        ...
-```
+Select class = "my_board.transport:BoardTransport" and supply constructor
+keyword arguments in [tzen.transport.parameters]. Arguments pass through
+unchanged; relative paths in them are relative to pytest's working directory.
+Tzen handles protobuf, COBS, CRC16, sequence IDs and run IDs. Use trusted
+configuration and Python files.
 
-Configure it with:
+The transport closes at pytest cleanup, including collection failures. Tests
+execute sequentially. Protocol/transport errors or uncertain abort cleanup
+disable subsequent executions on that connection. Command timeout bounds each
+response; test timeout bounds protocol waits, not arbitrary blocking Python or
+instrument code. Instrument fixtures must set their own I/O timeouts.
+Client remains available for programmatic control and is not thread-safe.
 
-```toml
-[tzen.transport]
-class = "my_board.transport:BoardTransport"
-[tzen.transport.parameters]
-address = "device-address"
-channel = 2
-```
+## Migration
 
-Parameters are passed unchanged as constructor keyword arguments. Relative
-paths in parameters are relative to pytest's working directory. The transport
-handles only bytes: Tzen handles protobuf, COBS, CRC16, sequence IDs, and run IDs.
-Configuration imports and constructs Python classes, so use trusted TOML files.
-
-For programmatic control, `Client`, `TestInfo`, `TestResult`, and `SerialTransport`
-remain public. `Client.run(..., on_sync=callback)` supports custom host-side
-synchronization decisions outside the plugin. A client owns a single transport
-and is not thread-safe.
-
-Collection uses pytest's public
-[collection reporting hook](https://docs.pytest.org/en/stable/reference/reference.html#pytest.hookspec.pytest_make_collect_report)
-to add the slave alongside the ordinary session collectors.
+Move declarations into normal pytest files, typically tests/test_*.py.
+Replace C-only classes with TzenRemoteTestCase and Python-step classes with
+TzenCompanionTestCase. Remove companion = ... and companion_paths.
+Function-based @testcase declarations are replaced by the explicit class types.
+Pass test paths to pytest. Offline documentation takes test paths instead of a
+TOML configuration.

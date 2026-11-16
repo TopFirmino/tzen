@@ -1,7 +1,6 @@
 [tzen]
 command_timeout = 5.0
 test_timeout = 15.0
-companion_paths = ["python/case_host.py"]
 
 [tzen.transport]
 class = "examples.Host.python.pipe_transport:PipeTransport"

@@ -6,14 +6,14 @@ import pytest
 
 from test_companions import companion
 from test_plugin import trace
-from tzen import TzenTestCase, step
+from tzen import TzenCompanionTestCase, step
 from tzen.cases import class_steps
 
 
 SOURCE = '''
 from pathlib import Path
 import pytest
-from tzen import TzenTestCase, step
+from tzen import TzenCompanionTestCase, step
 
 @pytest.fixture
 def resource():
@@ -22,7 +22,7 @@ def resource():
     Path("order.json").write_text(__import__("json").dumps(order))
     Path("fixture_closed").touch()
 
-class TestRemote(TzenTestCase):
+class TestRemote(TzenCompanionTestCase):
     """Exercise a class-based companion with shared state."""
     target = "remote"
 
@@ -107,14 +107,6 @@ def test_constructor_failure_runs_cleanup_without_starting_c(pytester):
     assert (pytester.path / "fixture_closed").exists()
 
 
-def test_documentation_only_class_does_not_execute_steps(pytester):
-    companion(pytester, SOURCE.replace('target = "remote"', 'target = "remote"\n    companion = False'))
-    pytester.runpytest("--tzen-strict-docs", "-q").assert_outcomes(passed=1)
-    assert "sync_release" in trace(pytester)
-    assert not (pytester.path / "order.json").exists()
-    assert not (pytester.path / "fixture_closed").exists()
-
-
 def test_step_fixture_arguments(pytester):
     source = SOURCE.replace("def a_verify(self):", "def a_verify(self, tmp_path):\n        assert tmp_path.is_dir()")
     companion(pytester, source)
@@ -128,7 +120,7 @@ def test_default_target_is_class_name(pytester):
 
 def test_no_duplicate_class_in_local_collection(pytester):
     companion(pytester, SOURCE)
-    result = pytester.runpytest("case_board.py", "--collect-only", "-q")
+    result = pytester.runpytest("test_board.py", "--collect-only", "-q")
     assert result.ret == 0
     assert "1 test collected" in result.stdout.str()
 
@@ -147,7 +139,7 @@ def test_invalid_class_is_collection_error(pytester, change):
 
 
 def test_step_inheritance_order():
-    class Base(TzenTestCase):
+    class Base(TzenCompanionTestCase):
         @step("first")
         def first(self): pass
 

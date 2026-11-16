@@ -10,7 +10,7 @@ from test_plugin import trace
 SOURCE = '''
 from pathlib import Path
 import pytest
-from tzen import TzenTestCase, step
+from tzen import TzenCompanionTestCase, step
 
 events = []
 def record(value):
@@ -36,7 +36,7 @@ def transient(dependency, request):
     yield object()
     record("transient close")
 
-class remote(TzenTestCase):
+class remote(TzenCompanionTestCase):
     """Class name binds to C without an explicit target."""
     def __init__(self, persistent):
         self.persistent = persistent
@@ -137,14 +137,14 @@ def test_optional_constructor_and_default_target(pytester):
     companion(pytester, '''
 import pytest
 from pathlib import Path
-from tzen import TzenTestCase, step
+from tzen import TzenCompanionTestCase, step
 
 @pytest.fixture
 def probe():
     yield 42
     Path("closed").touch()
 
-class remote(TzenTestCase):
+class remote(TzenCompanionTestCase):
     """No constructor and no target override are necessary."""
     @step("Synchronize")
     def synchronize(self, probe):

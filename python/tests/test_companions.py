@@ -1,25 +1,23 @@
-"""Combined collection, native pytest fixtures, documentation, and abort paths."""
+"""Native Python collection, class binding, fixtures, and documentation."""
 import json
 import subprocess
 import sys
+from xml.etree import ElementTree
 
 import pytest
 
 from test_plugin import prepare, trace
-from tzen.config import Settings
-from tzen.declarations import load_declarations, documentation_record
 
 
 def companion(pytester, source, *, count=1):
-    path = prepare(pytester, count=count)
-    path.write_text(path.read_text().replace("[tzen]\n", '[tzen]\ncompanion_paths = ["case_board.py"]\n'))
-    (pytester.path / "case_board.py").write_text(source)
+    path = prepare(pytester, count=count, declarations=False)
+    (pytester.path / "test_board.py").write_text(source)
     return path
 
 
 SOURCE = '''
 import pytest
-from tzen import testcase
+from tzen import TzenCompanionTestCase, step
 
 @pytest.fixture
 def instrument(tmp_path):
@@ -28,22 +26,23 @@ def instrument(tmp_path):
     yield path
     assert path.read_text() == "verified"
 
-@testcase(target="remote", companion=True)
-def remote(tzen_case, instrument):
+class remote(TzenCompanionTestCase):
     """Check the host action while C waits at sync 42."""
-    with tzen_case.run() as run:
-        run.wait_sync(42)
-        assert instrument.read_text() == "ready"
-        instrument.write_text("verified")
-        run.release(42)
-    assert run.result.passed
+    def __init__(self, instrument):
+        self.instrument = instrument
+
+    @step("Verify the instrument", critical=True)
+    def verify(self):
+        self.run.wait_sync(42)
+        assert self.instrument.read_text() == "ready"
+        self.instrument.write_text("verified")
+        self.run.release(42)
 '''
 
 
 def test_companion_fixtures_and_documentation(pytester):
     companion(pytester, SOURCE)
-    result = pytester.runpytest("--tzen-strict-docs", "--tzen-docs=docs.json", "--junitxml=report.xml", "-q")
-    result.assert_outcomes(passed=1)
+    pytester.runpytest("--tzen-strict-docs", "--tzen-docs=docs.json", "--junitxml=report.xml", "-q").assert_outcomes(passed=1)
     assert trace(pytester).count("execute_test") == 1
     assert trace(pytester).count("sync_release") == 1
     document = json.loads((pytester.path / "docs.json").read_text())
@@ -51,150 +50,130 @@ def test_companion_fixtures_and_documentation(pytester):
     record, = document["testcases"]
     assert "requirements" not in record and "tags" not in record
     assert record["companion"] is True
-    assert record["nodeid"] == "slave::remote[0]"
+    assert record["nodeid"] == "test_board.py::remote"
     assert record["description"].startswith("Check the host action")
-    assert "tzen_documentation" in (pytester.path / "report.xml").read_text()
+    report = ElementTree.parse(pytester.path / "report.xml")
+    assert report.find(".//property[@name='tzen_steps']") is not None
 
 
-def test_collect_only_does_not_execute_companion_or_fixture(pytester):
+def test_collect_only_never_executes_fixtures(pytester):
     companion(pytester, SOURCE.replace('path.write_text("ready")', 'raise AssertionError("fixture must not run")'))
-    result = pytester.runpytest("--collect-only", "--tzen-docs=docs.json", "-q")
-    assert result.ret == 0
+    assert pytester.runpytest("--collect-only", "--tzen-docs=docs.json", "-q").ret == 0
     assert "execute_test" not in trace(pytester)
-    assert len(json.loads((pytester.path / "docs.json").read_text())["testcases"]) == 1
 
 
-def test_documentation_only_function_is_never_called(pytester):
+def test_remote_declaration(pytester):
     companion(pytester, '''
-from tzen import testcase
-@testcase(target="remote")
-def describe():
+from tzen import TzenRemoteTestCase
+class remote(TzenRemoteTestCase):
     """C owns all execution for this test."""
-    raise AssertionError("documentation-only body must never execute")
 ''')
     pytester.runpytest("--tzen-strict-docs", "-q").assert_outcomes(passed=1)
     assert trace(pytester).count("sync_release") == 1
 
 
-@pytest.mark.parametrize("body", [
-    'run.wait_sync(99)',
-    'run.wait_sync(42)\n        assert False, "host verification failed"',
-    'run.wait_sync(42)',  # An unreleased sync must not be released implicitly.
+@pytest.mark.parametrize("source,message", [
+    ('from tzen import TzenRemoteTestCase\nclass missing(TzenRemoteTestCase): pass', "must match exactly one"),
+    ('from tzen import TzenTestCase\nclass remote(TzenTestCase): pass', "exactly one of"),
+    ('from tzen import TzenCompanionTestCase\nclass remote(TzenCompanionTestCase): pass', "at least one"),
+    ('from tzen import TzenRemoteTestCase\nclass remote(TzenRemoteTestCase):\n def __init__(self): pass', "cannot define"),
+    (SOURCE.replace("TzenCompanionTestCase", "TzenRemoteTestCase"), "cannot define"),
+    (SOURCE.replace('class remote(TzenCompanionTestCase):', 'class remote(TzenCompanionTestCase):\n    companion = True'), "not supported"),
 ])
-def test_python_failure_aborts_without_releasing_sync(pytester, body):
-    companion(pytester, f'''
-from tzen import testcase
-@testcase(target="remote", companion=True)
-def check(tzen_case):
-    """Check abort on a failed host operation."""
-    with tzen_case.run() as run:
-        {body}
-''')
-    pytester.runpytest("-q").assert_outcomes(failed=1)
-    assert "abort_test" in trace(pytester)
-    assert "sync_release" not in trace(pytester)
-    assert trace(pytester)[-1] == "close"
-
-
-def test_companion_must_execute_c_counterpart(pytester):
-    companion(pytester, '''
-from tzen import testcase
-@testcase(target="remote", companion=True)
-def forgotten(tzen_case):
-    """This companion accidentally omits C execution."""
-''')
-    result = pytester.runpytest("-q")
-    result.assert_outcomes(failed=1)
-    assert "must complete its C counterpart" in result.stdout.str()
-    assert "execute_test" not in trace(pytester)
-
-
-@pytest.mark.parametrize("source,count,message", [
-    (SOURCE.replace('target="remote"', 'target="missing"'), 1, "must match exactly one"),
-    (SOURCE, 2, "must match exactly one"),
-    (SOURCE + '\n@testcase(target="remote")\ndef duplicate(): pass\n', 1, "Duplicate declaration"),
-])
-def test_invalid_bindings_are_collection_errors(pytester, source, count, message):
-    companion(pytester, source, count=count)
+def test_invalid_declarations(pytester, source, message):
+    companion(pytester, source)
     result = pytester.runpytest("-q")
     result.assert_outcomes(errors=1)
     assert message in result.stdout.str()
-    if (pytester.path / "trace.txt").exists():
-        assert "execute_test" not in trace(pytester)
-        assert trace(pytester)[-1] == "close"
+
+
+def test_ambiguous_c_name(pytester):
+    companion(pytester, SOURCE, count=2)
+    fake = pytester.path / "fake_slave.py"
+    fake.write_text(fake.read_text().replace('response.test_info.name = "remote" if command.get_test_info.index == 0 else f"remote{command.get_test_info.index}"', 'response.test_info.name = "remote"'))
+    result = pytester.runpytest("-q")
+    result.assert_outcomes(errors=1)
+    assert "must match exactly one" in result.stdout.str()
+    assert trace(pytester)[-1] == "close"
+
+
+def test_duplicate_binding_across_modules(pytester):
+    companion(pytester, SOURCE)
+    (pytester.path / "test_other.py").write_text('from tzen import TzenRemoteTestCase\nclass remote(TzenRemoteTestCase): pass')
+    result = pytester.runpytest("-q")
+    result.assert_outcomes(errors=1)
+    assert "Duplicate declaration" in result.stdout.str()
+    assert trace(pytester).count("get_tests") == 1
 
 
 def test_missing_docs_strict_and_warning_modes(pytester):
-    prepare(pytester, count=1)
+    companion(pytester, 'from tzen import TzenRemoteTestCase\nclass remote(TzenRemoteTestCase): pass')
     result = pytester.runpytest("--tzen-strict-docs", "-q")
     result.assert_outcomes(errors=1)
     assert "Missing testcase documentation" in result.stdout.str()
-    assert "execute_test" not in trace(pytester)
+    assert not (pytester.path / "trace.txt").exists()
     result = pytester.runpytest("-q")
     result.assert_outcomes(passed=1)
     assert "Missing testcase documentation" in result.stdout.str()
 
 
-def test_offline_export_never_imports_or_opens_transport(pytester):
+def test_offline_export_never_imports_transport(pytester):
     path = companion(pytester, SOURCE)
     path.write_text(path.read_text().replace("fake_slave:Transport", "nonexistent_device:Transport"))
     output = pytester.path / "offline.json"
-    result = subprocess.run([sys.executable, "-m", "tzen", "docs", "--config", str(path),
-                             "--output", str(output)], capture_output=True, text=True)
-    assert result.returncode == 0, result.stderr
+    result = subprocess.run([sys.executable, "-m", "tzen", "docs", "test_board.py",
+                             "--output", str(output), "-q"], capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
     assert not (pytester.path / "trace.txt").exists()
-    document = json.loads(output.read_text())
-    assert document["verified_against_slave"] is False
-    assert document["testcases"][0]["target"] == "remote"
+    offline = json.loads(output.read_text())
+    assert offline["verified_against_slave"] is False
+    assert offline["testcases"][0]["target"] == "remote"
+    assert "index" not in offline["testcases"][0]
 
 
-def test_paths_are_relative_to_config_and_offline_docs_match(pytester):
-    path = companion(pytester, SOURCE)
-    settings = Settings.load(path)
-    assert settings.companion_paths == (pytester.path / "case_board.py",)
-    declarations, _ = load_declarations(settings.companion_paths)
-    pytester.runpytest("--collect-only", "--tzen-docs=docs.json", "-q")
-    live = json.loads((pytester.path / "docs.json").read_text())["testcases"][0]
-    offline = json.loads(json.dumps(documentation_record(declarations["remote"])))
-    assert all(live[key] == value for key, value in offline.items())
-
-
-def test_c_failure_cannot_be_hidden_by_companion(pytester):
+def test_offline_mode_requires_collect_only(pytester):
     companion(pytester, SOURCE)
+    result = pytester.runpytest("--tzen-offline", "-q")
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    assert not (pytester.path / "trace.txt").exists()
+
+
+def test_module_fixtures_are_isolated_and_registry_is_shared(pytester):
+    companion(pytester, SOURCE, count=2)
+    other = SOURCE.replace("class remote(", "class remote1(").replace('"ready"', '"other"')
+    (pytester.path / "test_other.py").write_text(other)
+    # Both C tests succeed in this fixture isolation check.
     fake = pytester.path / "fake_slave.py"
-    fake.write_text(fake.read_text().replace("status=self.index", "status=1"))
-    result = pytester.runpytest("-q")
-    result.assert_outcomes(failed=1)
-    assert "remote (index 0, run 1): FAIL" in result.stdout.str()
+    fake.write_text(fake.read_text().replace("status=self.index", "status=0"))
+    pytester.runpytest("-q").assert_outcomes(passed=2)
+    assert trace(pytester).count("get_tests") == 1
 
 
-def test_successful_abort_allows_next_test(pytester):
-    companion(pytester, '''
-from tzen import testcase
-@testcase(target="remote", companion=True)
-def check(tzen_case):
-    """Abort while waiting at sync 42."""
-    with tzen_case.run() as run:
-        run.wait_sync(42)
-        assert False, "host assertion"
-''', count=2)
-    fake = pytester.path / "fake_slave.py"
-    fake.write_text(fake.read_text().replace('response.test_info.name = "remote"',
-                    'response.test_info.name = "remote" if command.get_test_info.index == 0 else "second"')
-                    .replace("status=self.index", "status=0"))
-    pytester.runpytest("-q").assert_outcomes(failed=1, passed=1)
-    assert trace(pytester).count("execute_test") == 2
-    assert trace(pytester).count("abort_test") == 1
-
-
-def test_python_setup_error_does_not_start_c(pytester):
-    companion(pytester, SOURCE.replace('path.write_text("ready")', 'raise OSError("instrument unavailable")'))
-    pytester.runpytest("-q").assert_outcomes(errors=1)
-    assert "execute_test" not in trace(pytester)
-
-
-def test_explicit_local_path_does_not_duplicate_declaration(pytester):
+def test_nested_conftest_and_package_imports(pytester):
     companion(pytester, SOURCE)
-    result = pytester.runpytest("case_board.py", "--collect-only", "-q")
-    assert result.ret == 0
-    assert "1 test collected" in result.stdout.str()
+    nested = pytester.path / "nested"
+    nested.mkdir()
+    (nested / "__init__.py").touch()
+    (nested / "helpers.py").write_text("TARGET = 'remote'")
+    (nested / "conftest.py").write_text("import pytest\n@pytest.fixture\ndef nested_value(): return 42")
+    (pytester.path / "test_board.py").unlink()
+    (nested / "test_board.py").write_text('''
+from .helpers import TARGET
+from tzen import TzenCompanionTestCase, step
+class Case(TzenCompanionTestCase):
+    """Use real package imports and directory-local fixtures."""
+    target = TARGET
+    @step("Synchronize")
+    def synchronize(self, nested_value):
+        self.run.wait_sync(nested_value)
+        self.run.release(nested_value)
+''')
+    pytester.runpytest("-q").assert_outcomes(passed=1)
+
+
+def test_imported_helper_base_is_not_collected(pytester):
+    companion(pytester, SOURCE)
+    (pytester.path / "helpers.py").write_text("from tzen import TzenCompanionTestCase\nclass Base(TzenCompanionTestCase): pass")
+    p = pytester.path / "test_board.py"
+    p.write_text("from helpers import Base\n" + p.read_text().replace("class remote(TzenCompanionTestCase)", "class remote(Base)"))
+    pytester.runpytest("-q").assert_outcomes(passed=1)

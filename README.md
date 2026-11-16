@@ -15,10 +15,10 @@ python -m pip install -e .
 
 See the [pytest plugin guide](python/tzen/README.md) for TOML configuration and
 custom `TzenTransport` implementations. Discover and execute slave tests with
-`python -m pytest --tzen-config path/to/board.toml -v`.
+`python -m pytest tests/ --tzen-config path/to/board.toml -v`.
 
 For the C host example, build with `make -C examples/Host/C`, then run
-`python -m pytest --tzen-config examples/Host/tzen-host.toml -m tzen -v` from the repository
+`python -m pytest examples/Host/tests --tzen-config examples/Host/tzen-host.toml -v` from the repository
 root. Its intentional failure is reported as a failed pytest test.
 
 The host example includes Python-owned documentation for all three tests and a
@@ -37,6 +37,5 @@ Local regression checks (gcc required for C tests):
 ```powershell
 python -m unittest discover -s ttp/tests -v
 python -m unittest discover -s testharness-c/tests -v
-python -m unittest discover -s tzen/tests -v
 python -m pytest python/tests -q
 ```

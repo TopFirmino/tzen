@@ -21,4 +21,4 @@ package-dir = {tzen = "python/tzen"}
 tzen = ["py.typed"]
 
 [tool.pytest.ini_options]
-testpaths = ["python/tests", "tzen/tests", "ttp/tests", "testharness-c/tests"]
+testpaths = ["python/tests", "ttp/tests", "testharness-c/tests"]

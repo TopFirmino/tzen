@@ -7,14 +7,15 @@ From the repository root:
 ```sh
 python -m pip install -e .
 make -C examples/Host/C
-python -m tzen docs --config examples/Host/tzen-host.toml --output examples/Host/results/offline.json
-python -m pytest --tzen-config examples/Host/tzen-host.toml --collect-only -vv --tzen-strict-docs --tzen-docs examples/Host/results/collected.json
-python -m pytest --tzen-config examples/Host/tzen-host.toml -k "not Expected" -v --tzen-strict-docs --junitxml=examples/Host/results/passing.xml
+python -m tzen docs examples/Host/tests --output examples/Host/results/offline.json
+python -m pytest examples/Host/tests --tzen-config examples/Host/tzen-host.toml --collect-only -vv --tzen-strict-docs --tzen-docs examples/Host/results/collected.json
+python -m pytest examples/Host/tests --tzen-config examples/Host/tzen-host.toml -k "not Expected" -v --tzen-strict-docs --junitxml=examples/Host/results/passing.xml
 ```
 
-The `TzenTestCase` classes in `../python/case_host.py` document all three C tests.
-`TestYield` and `TestExpectedFailure` set `companion = False` and supply only
-documentation. `TestSynchronization` has three ordered `@step` methods: wait
+Pytest discovers the declarations in `../tests/test_host.py` normally.
+`TestYield` and `TestExpectedFailure` inherit `TzenRemoteTestCase` and supply
+only documentation. `TestSynchronization` inherits `TzenCompanionTestCase`
+and has three ordered `@step` methods: wait
 for sync 42, write/check a host-side probe, and release C. It obtains its probe
 from a pytest fixture in `__init__`; its finalizer checks C's completion log.
 The host-action step also requests `temporary_probe`, which is removed when
@@ -24,6 +25,13 @@ Tzen automatically starts and finishes the single C run around the steps.
 All three synchronization steps are critical, so failures stop the sequence.
 The probe is a temporary file demonstrating host participation, not a physical
 voltage measurement. Fixture teardown checks that the host action occurred.
+
+The TOML file configures only transport and execution limits. It has no test
+paths. Use the explicit `examples/Host/tests` path to select this example;
+running pytest from the repository root without paths collects development
+tests according to the repository's normal pytest configuration.
+Exact selection also works, for example
+`python -m pytest examples/Host/tests/test_host.py::TestSynchronization --tzen-config examples/Host/tzen-host.toml -v`.
 
 The offline command imports declarations but never imports or opens the
 configured transport. Its JSON is marked unverified. Live collection validates

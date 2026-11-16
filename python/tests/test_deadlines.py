@@ -3,10 +3,13 @@ import time
 
 from tzen import Client
 from ttp.python import ttp
-from tzen.tests.test_client import FakeTransport
+from test_plugin import FAKE_SLAVE
 
 
-def test_execution_uses_test_timeout():
+def test_execution_uses_test_timeout(tmp_path):
+    namespace = {}
+    exec(FAKE_SLAVE, namespace)
+    FakeTransport = namespace["Transport"]
     class SlowTransport(FakeTransport):
         ready_at = 0.0
 
@@ -16,7 +19,7 @@ def test_execution_uses_test_timeout():
                 return b""
             return super().read(size)
 
-    transport = SlowTransport()
+    transport = SlowTransport(trace=tmp_path / "trace.txt", count=1)
 
     def on_event(event):
         if event.WhichOneof("payload") == "log":

@@ -1,23 +1,22 @@
-"""Offline testcase documentation: python -m tzen docs --config board.toml."""
+"""Offline documentation through ordinary pytest discovery."""
 import argparse
 from pathlib import Path
 
-from .config import Settings
-from .declarations import load_declarations, documentation_record, write_documentation
+import subprocess
+import sys
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    subcommands = parser.add_subparsers(dest="command", required=True)
-    docs = subcommands.add_parser("docs", help="Export Python declarations without opening a transport")
-    docs.add_argument("--config", type=Path, required=True)
+    commands = parser.add_subparsers(dest="command", required=True)
+    docs = commands.add_parser("docs", help="Collect Python declarations without connecting to a slave")
+    docs.add_argument("paths", nargs="*", help="Pytest test paths or node IDs")
     docs.add_argument("--output", type=Path, required=True)
-    args = parser.parse_args()
-    settings = Settings.load(args.config.resolve())
-    declarations, _ = load_declarations(settings.companion_paths)
-    write_documentation(args.output, [documentation_record(d) for d in declarations.values()], verified=False)
-    print(f"Exported {len(declarations)} testcase declarations to {args.output} (offline, not verified against firmware)")
+    args, pytest_args = parser.parse_known_args()
+    # A fresh pytest process preserves its ordinary assertion-rewriting startup.
+    return subprocess.call([sys.executable, "-m", "pytest", *args.paths, *pytest_args,
+                            "--collect-only", "--tzen-offline", f"--tzen-docs={args.output}"])
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

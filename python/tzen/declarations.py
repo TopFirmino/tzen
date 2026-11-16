@@ -1,115 +1,52 @@
-"""Python-owned testcase documentation and explicit companion declarations."""
+"""Read documentation and validate class-based pytest declarations."""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-import hashlib
-import importlib.util
 import inspect
 import json
 from pathlib import Path
-import sys
-from types import ModuleType
-from typing import Callable
-from .cases import TzenTestCase, Step, class_steps, class_fixtures
+
+from .cases import (
+    TzenTestCase, TzenRemoteTestCase, TzenCompanionTestCase,
+    Step, class_steps, class_fixtures,
+)
 
 
 @dataclass(frozen=True)
 class Documentation:
     target: str
     description: str
-    companion: bool = False
+    companion: bool
     steps: tuple[Step, ...] = ()
 
 
 @dataclass(frozen=True)
 class Declaration:
     documentation: Documentation
-    implementation: Callable
+    implementation: type[TzenTestCase]
     source: Path
 
 
-def _validate_metadata(target, companion):
+def declare(cls: type[TzenTestCase], source: Path) -> Declaration:
+    remote = issubclass(cls, TzenRemoteTestCase)
+    companion = issubclass(cls, TzenCompanionTestCase)
+    if remote == companion:
+        raise ValueError("Inherit from exactly one of TzenRemoteTestCase or TzenCompanionTestCase")
+    steps = class_steps(cls)
+    fixtures = class_fixtures(cls, steps)
+    if remote and (steps or fixtures or cls.__init__ is not object.__init__):
+        raise ValueError("Remote testcases cannot define Python steps or constructors; use TzenCompanionTestCase")
+    if companion and not steps:
+        raise ValueError("Companion testcases require at least one @step method")
+    if any(mark.name == "parametrize" for mark in getattr(cls, "pytestmark", ())):
+        raise ValueError("Testcase parametrization is not supported")
+    target = cls.target if cls.target is not None else cls.__name__
     if not isinstance(target, str) or not target.strip():
         raise ValueError("testcase target must be a nonempty string")
-    if type(companion) is not bool:
-        raise ValueError("companion must be a boolean")
-
-
-def testcase(*, target: str, companion: bool = False):
-    """Describe a C testcase; only companion=True executes the Python function.
-
-    The target is the exact, unique name in the C registry. The docstring is
-    the description. Companion functions must accept the tzen_case fixture.
-    """
-    _validate_metadata(target, companion)
-
-    def decorate(function):
-        if not inspect.isfunction(function) or inspect.iscoroutinefunction(function) or inspect.isgeneratorfunction(function):
-            raise ValueError("testcase declarations must be synchronous functions")
-        if hasattr(function, "__tzen_documentation__"):
-            raise ValueError("a function may declare only one testcase")
-        if companion and "tzen_case" not in inspect.signature(function).parameters:
-            raise ValueError("a companion must accept the tzen_case fixture")
-        function.__tzen_documentation__ = Documentation(
-            target, inspect.getdoc(function) or "", companion,
-        )
-        # These functions are collected only through the slave, never twice.
-        function.__test__ = False
-        return function
-
-    return decorate
-
-
-# Importing the decorator into a test module must not collect the factory.
-testcase.__test__ = False
-
-
-def load_declarations(paths: tuple[Path, ...]) -> tuple[dict[str, Declaration], list[ModuleType]]:
-    """Import explicit files or case_*.py files within explicit directories."""
-    files: set[Path] = set()
-    for path in paths:
-        if path.is_dir():
-            files.update(path.rglob("case_*.py"))
-        elif path.is_file() and path.suffix == ".py":
-            files.add(path)
-        else:
-            raise ValueError(f"Invalid companion path: {path}")
-    declarations = {}
-    modules = []
-    for path in sorted(files):
-        name = "_tzen_cases_" + hashlib.sha256(str(path).encode()).hexdigest()[:20]
-        spec = importlib.util.spec_from_file_location(name, path)
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[name] = module
-        try:
-            spec.loader.exec_module(module)
-        except BaseException:
-            sys.modules.pop(name, None)
-            raise
-        modules.append(module)
-        for implementation in vars(module).values():
-            if inspect.isclass(implementation) and issubclass(implementation, TzenTestCase) and implementation is not TzenTestCase:
-                if implementation.__module__ != name or inspect.isabstract(implementation):
-                    continue
-                steps = class_steps(implementation)
-                class_fixtures(implementation, steps)
-                target = implementation.target if implementation.target is not None else implementation.__name__
-                companion = bool(steps) if implementation.companion is None else implementation.companion
-                _validate_metadata(target, companion)
-                doc = Documentation(
-                    target, inspect.cleandoc(implementation.__dict__.get("__doc__") or ""),
-                    companion, steps,
-                )
-                if companion and not steps:
-                    raise ValueError(f"Companion class {implementation.__name__} has no @step methods")
-            else:
-                doc = getattr(implementation, "__tzen_documentation__", None)
-            if not isinstance(doc, Documentation) or implementation.__module__ != name:
-                continue
-            if doc.target in declarations:
-                raise ValueError(f"Duplicate declaration for {doc.target!r}")
-            declarations[doc.target] = Declaration(doc, implementation, path)
-    return declarations, modules
+    documentation = Documentation(
+        target, inspect.cleandoc(cls.__dict__.get("__doc__") or ""), companion, steps,
+    )
+    return Declaration(documentation, cls, source)
 
 
 def write_documentation(path: Path, records: list[dict], *, verified: bool) -> None:

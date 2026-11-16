@@ -48,15 +48,22 @@ class TzenTestCase:
     """One instance and one C execution per collected testcase.
 
     Set target to the exact C name (defaults to the concrete class name).
-    Classes with steps are companions by default; companion=False makes the
-    class documentation-only. __init__ and steps may request pytest fixtures.
+    Inherit from TzenRemoteTestCase or TzenCompanionTestCase to declare a test.
+    Companion constructors and steps may request pytest fixtures.
     The runner assigns run during execution and keeps state on self between
     steps. Resource cleanup belongs to fixture finalizers, not testcase hooks.
     """
 
     __test__ = False
     target: str | None = None
-    companion: bool | None = None
+
+
+class TzenRemoteTestCase(TzenTestCase):
+    """Declare documentation and identity for C-only execution."""
+
+
+class TzenCompanionTestCase(TzenTestCase):
+    """Declare Python steps cooperating with one C execution."""
 
 
 def class_steps(cls: type[TzenTestCase]) -> tuple[Step, ...]:
@@ -69,8 +76,8 @@ def class_steps(cls: type[TzenTestCase]) -> tuple[Step, ...]:
     for base in reversed(cls.__mro__):
         if base in (object, TzenTestCase):
             continue
-        if any(name in vars(base) for name in ("setup", "teardown", "requirements", "tags")):
-            raise ValueError("Testcases use __init__ and steps; setup/teardown hooks and requirements/tags fields are not supported")
+        if any(name in vars(base) for name in ("setup", "teardown", "requirements", "tags", "companion")):
+            raise ValueError("Use an explicit testcase subclass; companion, setup/teardown, and requirements/tags are not supported")
         if len([parent for parent in base.__bases__ if issubclass(parent, TzenTestCase)]) > 1:
             raise ValueError("Multiple TzenTestCase bases are not supported")
         for name, value in vars(base).items():

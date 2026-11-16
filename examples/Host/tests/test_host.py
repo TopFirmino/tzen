@@ -1,10 +1,10 @@
 """Class declarations and ordered Python steps for the C host registry."""
 import pytest
 
-from tzen import TzenTestCase, step
+from tzen import TzenRemoteTestCase, TzenCompanionTestCase, step
 
 
-class TestYield(TzenTestCase):
+class TestYield(TzenRemoteTestCase):
     """Verify that a cooperative C step can yield before completing.
 
     Preconditions: the host harness is connected through binary pipes.
@@ -13,7 +13,6 @@ class TestYield(TzenTestCase):
     """
 
     target = "Yield and pass"
-    companion = False
 
 
 @pytest.fixture
@@ -36,7 +35,7 @@ def temporary_probe(tmp_path):
     path.unlink()
 
 
-class TestSynchronization(TzenTestCase):
+class TestSynchronization(TzenCompanionTestCase):
     """Verify Python participation at C synchronization point 42.
 
     Preconditions: a writable host-side probe is available.
@@ -67,7 +66,7 @@ class TestSynchronization(TzenTestCase):
 
 
 
-class TestExpectedFailure(TzenTestCase):
+class TestExpectedFailure(TzenRemoteTestCase):
     """Demonstrate propagation of an intentional C failure into pytest.
 
     Procedure: run the C callback that logs an error and returns FAIL.
@@ -76,4 +75,3 @@ class TestExpectedFailure(TzenTestCase):
     """
 
     target = "Expected failure"
-    companion = False

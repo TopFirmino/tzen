@@ -32,6 +32,7 @@ class Settings:
     command_timeout: float = 5.0
     test_timeout: float = 15.0
     max_events: int = 256
+    companion_paths: tuple[Path, ...] = ()
 
     @classmethod
     def load(cls, path: Path) -> Settings:
@@ -43,7 +44,7 @@ class Settings:
         table = document.get("tzen")
         if not isinstance(table, dict):
             raise ConfigurationError("Configuration requires a [tzen] table")
-        unknown = table.keys() - {"transport", "command_timeout", "test_timeout", "max_events"}
+        unknown = table.keys() - {"transport", "command_timeout", "test_timeout", "max_events", "companion_paths"}
         if unknown:
             raise ConfigurationError(f"Unknown tzen settings: {', '.join(sorted(unknown))}")
         transport = table.get("transport")
@@ -58,11 +59,15 @@ class Settings:
         max_events = table.get("max_events", 256)
         if type(max_events) is not int or max_events <= 0:
             raise ConfigurationError("max_events must be a positive integer")
+        paths = table.get("companion_paths", [])
+        if not isinstance(paths, list) or not all(isinstance(p, str) and p.strip() for p in paths):
+            raise ConfigurationError("companion_paths must be a list of nonempty paths")
         return cls(
             class_path, parameters,
             _positive_number(table.get("command_timeout", 5.0), "command_timeout"),
             _positive_number(table.get("test_timeout", 15.0), "test_timeout"),
             max_events,
+            tuple((path.parent / entry).resolve() for entry in paths),
         )
 
     def open_transport(self) -> TzenTransport:

@@ -21,11 +21,16 @@ For the C host example, build with `make -C examples/Host/C`, then run
 `python -m pytest --tzen-config examples/Host/tzen-host.toml -m tzen -v` from the repository
 root. Its intentional failure is reported as a failed pytest test.
 
+The host example includes Python-owned documentation for all three tests and a
+Python companion coordinating with C at sync 42. See the
+[host guide](examples/Host/C/README.md) for offline JSON documentation export,
+live collection with descriptions, and a passing run of the positive cases.
+
 See [Arduino instructions](examples/Arduino/README.md) to build, flash and run.
 The current `tzen.c` implements RX/TX, discovery, execution, synchronization and
 run-specific logs/results with independently polled workers. The older Arduino execution example requires migration
 before it can run against this implementation. Use the [Host example](examples/Host/C/README.md)
-for current command/response checks with buffered temporary files.
+for current command/response checks over binary subprocess pipes.
 
 Local regression checks (gcc required for C tests):
 

@@ -57,13 +57,100 @@ work normally. SUCCESS passes; FAIL and ABORTED fail. Logs and step results are
 attached to the call report, including failure output. JUnit records test index
 and run ID for completed runs.
 
-Tests run sequentially, with automatic release of sync requests. Command timeout
+Tests run sequentially; C-only tests automatically release sync requests, while
+Python companions release them explicitly. Command timeout
 limits each command response; test timeout bounds waiting for execution events.
 Transport calls and best-effort abort can add their own bounded latency. On a
 protocol/transport error or timeout, subsequent tests on that connection are
 skipped because the target state is uncertain. The transport closes at pytest
 cleanup, including collection errors and collect-only. pytest-xdist parallel
 execution is rejected to avoid concurrent access to the same slave.
+
+## Testcase documentation and Python companions
+
+Configure declaration files or directories, relative to the TOML file:
+
+```toml
+[tzen]
+companion_paths = ["companions"]
+```
+
+Directories load `case_*.py` recursively; an explicit `.py` file can have any
+name. Only decorated functions become declarations. A declaration matches the
+exact name in the C registry; matching by index is deliberately avoided.
+Missing targets, ambiguous C names, and duplicate declarations are collection
+errors. Without a declaration, a C test still executes normally.
+
+```python
+from tzen import testcase
+
+@testcase(target="C-only test", requirements=["REQ-001"], tags=["startup"])
+def description():
+    """Verify successful startup.
+
+    Preconditions: board powered.
+    Procedure: execute the C startup checks.
+    Expected result: every C step succeeds.
+    """
+
+@testcase(target="GPIO test", companion=True, requirements=["REQ-002"])
+def check_gpio(tzen_case, multimeter):
+    """Verify the output voltage while C waits at sync 10."""
+    multimeter.configure_voltage()
+    with tzen_case.run() as run:
+        run.wait_sync(10)
+        assert multimeter.voltage() > 3.0
+        run.release(10)
+    assert run.result.passed
+```
+
+`multimeter` is a user-defined pytest fixture. Documentation-only is the
+default: that function's body is never called. `companion=True` explicitly
+enables Python execution and requires the `tzen_case` argument. Each pair is
+one pytest item under the slave and executes the C counterpart exactly once.
+Normal return requires C SUCCESS as well as successful Python assertions.
+An absent C execution cannot silently pass. Non-successful C completion fails
+the item, even if Python attempts to ignore it.
+
+Python companions control synchronization explicitly: unexpected, missing, or
+unreleased sync points fail the test. C-only tests retain automatic release.
+On a Python failure, Tzen attempts abort and consumes the terminal event before
+another test starts; an uncertain connection disables further execution.
+The test timeout bounds protocol waits. It cannot interrupt arbitrary blocking
+Python/instrument code, so instrument fixtures must configure their own I/O
+timeouts. Do not launch a background thread that reads the TTP transport.
+
+Define fixtures in the declaration files or in pytest's root `conftest.py`.
+Declaration modules share one synthetic slave module scope; conflicting module
+symbols are rejected, so put shared fixtures/helpers in an importable module.
+Nested `conftest.py` files in companion directories are not auto-discovered.
+Use absolute imports for helpers. Python test parametrization and parametrized
+fixtures are not supported for companions yet. Explicit local collection does
+not collect decorated declarations a second time.
+
+Descriptions come from docstrings. Requirements, tags, execution type, target
+name, source path, and (online) C index/step count are exported as JSON.
+Each collected item exposes a `documentation` dictionary to other plugins.
+JUnit includes the description along with execution identity.
+
+```sh
+# Offline: imports declarations, never opens the target connection.
+python -m tzen docs --config board.toml --output docs/offline.json
+
+# Online: validates against firmware, without executing tests or fixtures.
+python -m pytest --tzen-config board.toml --collect-only -vv --tzen-docs docs/live.json --tzen-strict-docs
+```
+
+Offline exports are explicitly marked `verified_against_slave: false`; they
+contain only declared tests and cannot detect undocumented firmware tests.
+Online exports include selected tests after pytest filtering and are produced
+only after successful collection. `--tzen-strict-docs` rejects missing or empty
+descriptions; otherwise these produce a warning. Collection verification means
+name matching against the current registry, not firmware-version certification.
+The current wire protocol does not advertise mandatory companions, so it cannot
+detect a missing required companion file from C metadata alone.
+
+See the [host example](../../examples/Host/C/README.md) for a runnable companion.
 
 ## Custom transports
 

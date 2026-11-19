@@ -10,3 +10,11 @@ __all__ = ["Client", "CommandError", "TestInfo", "TestResult", "SerialTransport"
 from .events import EventDispatcher, EventFilter, ExecutionRef, Subscription, SOURCE_TEST, execution_of
 
 __all__ += ["EventDispatcher", "EventFilter", "ExecutionRef", "Subscription", "SOURCE_TEST", "execution_of"]
+
+from .events import TargetLog, LogHandler, LogLevel, TestStatus
+
+__all__ += ["TargetLog", "LogHandler", "LogLevel", "TestStatus"]
+
+from .sinks import FileLogSink, LogSink
+
+__all__ += ["FileLogSink", "LogSink"]

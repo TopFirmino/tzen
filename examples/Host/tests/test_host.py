@@ -28,8 +28,7 @@ def host_probe(tmp_path, tzen_case):
     assert path.read_text() == "sync 42 observed before release"
     execution = tzen_case.execution
     if execution is not None and execution.result is not None and execution.result.passed:
-        assert any(event.WhichOneof("payload") == "log" and
-                   event.log.message == "Yielding test completed" for event in execution.events)
+        assert any(record.message == "Yielding test completed" for record in execution.result.logs)
 
 
 @pytest.fixture

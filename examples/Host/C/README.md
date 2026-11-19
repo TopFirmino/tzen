@@ -121,13 +121,9 @@ terminal result, `host_emit_deferred_logs()` queues the summary independently of
 the released worker. No context pointer is retained. This example is single
 threaded and treats enqueue failure as an explicit process error.
 
-`../python/log_output.py` supplies an application-owned callable subscribed through
-`client.events.subscribe(output)`. It labels sources and identities, verifies
-that each summary arrives after `TestFinished`, and checks that custom messages
-are absent from the standard testcase diagnostics. `run.py` explicitly continues
-receiving after each run because this demo expects exactly one known summary.
-There is no generic collection-completion event or background client polling.
-The text is illustrative; no real coverage or WCET measurement is performed.
+The framework reads the system and coverage routes from `../tzen-host.toml`.
+The coverage route requests one correlated message after each testcase with a
+two-second timeout. These demo messages contain synthetic data.
 
 For visible logs from the pytest cases, run from the repository root:
 
@@ -135,10 +131,13 @@ For visible logs from the pytest cases, run from the repository root:
 python -m pytest examples/Host/tests --tzen-config examples/Host/tzen-host.toml -k "not Expected" -v -rP --log-level=INFO
 ```
 
-The example's `conftest.py` installs a subscription using the library-provided
-`tzen_client` fixture and receives the deferred summary during fixture teardown.
 Remove `-k "not Expected"` to also see the intentional failure (pytest exits 1).
 The direct `make check` runner verifies that failure as an expected outcome and
 also exercises abort, so it exits successfully when all four runs behave correctly.
 
 Pytest captures target messages through Python logging. Use `--log-level=ERROR` for errors only. With `-rP`, pytest displays captured output for passing tests as well. The direct runner prints its own standalone trace.
+
+Source 7 uses the built-in file sink. Source 8 uses the application class
+`examples.Host.python.coverage2:Coverage2Sink` in `../python/coverage2.py`.
+Its `write(record)` method appends a JSON object with the execution identity
+and synthetic sample to `../results/coverage2.jsonl` after normal logging.

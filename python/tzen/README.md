@@ -235,34 +235,25 @@ including `(0, 0)` are valid; a global log has no execution identity. Source `0`
 is reserved for testcase diagnostics and requires execution scope. The testcase
 is identified by `test_index`, and its invocation by `run_id`.
 
-Every `Client` has an `events` dispatcher. A callback receives the complete TTP
-`TargetToHost` envelope; a function, bound method, or callable object is enough.
-Subscriptions are additive: observing a testcase does not disable its built-in
-handling. The built-in test inbox uses the same subscriptions.
+Use `client.events.subscribe_logs` with a function, bound method, or callable
+object implementing the `LogHandler` protocol. Each immutable `TargetLog`
+provides the source ID, message, Python logging level, and optional execution.
 
 ```python
-from tzen import ExecutionRef, SOURCE_TEST
+import logging
+from tzen import TargetLog
 
-COVERAGE = 7
+def save_coverage(record: TargetLog) -> None:
+    logging.getLogger("coverage").log(record.level, "%s", record.message)
 
-def save_coverage(event):
-    print(event.log.message)
-
-with client.events.subscribe(save_coverage, source=COVERAGE):
+with client.events.subscribe_logs(save_coverage, source=7):
     result = client.run("My test")
-    # If the application expects another message after the test:
-    client.receive(timeout=2.0)
-
-# Optional filters; None means any. All supplied filters must match.
-subscription = client.events.subscribe(
-    save_coverage, source=COVERAGE, execution=ExecutionRef(42, 3)
-)
-subscription.close()  # idempotent
 ```
 
-Other filters are `kind="log"` / `kind="test_event"` and `global_only=True`.
-An unfiltered subscription observes all asynchronous events. `execution_of(event)`
-returns an `ExecutionRef` or `None`, avoiding zero-ID sentinel checks.
+Omit `source` to observe all logs. Pass `execution=ExecutionRef(42, 3)` for
+one execution or `global_only=True` for global logs. `result.logs` exposes
+the testcase diagnostics as the same record type. Low-level consumers can use
+`events.subscribe` for raw protocol envelopes.
 
 Callbacks run synchronously in registration order when the client reads an event,
 including while waiting for a command ACK. No background reader, retries, run-open
@@ -281,27 +272,60 @@ buffered events have already been dispatched once and are not replayed to new
 subscribers. Test inboxes and test result histories are bounded separately by the
 same limit. Applications control storage for their own subscribers.
 
-In pytest, the library supplies a session-scoped `tzen_client` fixture for the
-already configured target. For example, in `conftest.py`:
+For pytest projects, declare shared routes in the same TOML file as the transport.
+The plugin looks up from each collected Tzen test module to the pytest root,
+choosing the nearest configuration. Within a directory it tries `tzen-host.toml`
+before `tzen.toml`. An explicit `--tzen-config` applies to the whole invocation.
+A session uses one target configuration.
 
-```python
-import pytest
-
-@pytest.fixture(scope="session", autouse=True)
-def coverage_messages(tzen_client):
-    with open("coverage.log", "w", encoding="utf-8") as output:
-        def record(event):
-            output.write(event.log.message + "\n")
-        with tzen_client.events.subscribe(record, source=7):
-            yield
+```toml
+[[tzen.logging.sources]]
+source = 7
+logger = "tzen.target.coverage"
+after_test_timeout = 2.0
 ```
 
-No change to testcase declarations is needed. A fixture or application can call
-`receive()` after a test when it has an application-specific reason to expect
-more messages; the library does not infer completion from a timeout.
+A logger route forwards the target severity to standard Python logging. For
+application-specific processing, replace `logger` with `handler = "mymodule:save"`;
+the function receives a `TargetLog`. Routes are active from discovery onwards.
+Source zero uses the built-in testcase handling. Normally execution ends at
+TestFinished. Specify `after_test_timeout` only when the target guarantees a
+subsequent correlated message from that source for every completed execution.
 
 The schema retains the existing field numbers. Absent new fields mean source `0`
 and execution scope, so updated readers accept existing testcase logs. Old readers
 do not understand global/custom-source routing; update host and target together
 before using the new messages. Text remains bounded to 63 bytes in C; binary
 coverage chunks and structured measurements are outside this minimal extension.
+
+## Save a source after logging
+
+Add a sink under the source entry in your TOML. For example:
+
+```toml
+[[tzen.logging.sources]]
+source = 7
+logger = "tzen.target.coverage"
+
+[tzen.logging.sources.sink]
+class = "tzen:FileLogSink"
+
+[tzen.logging.sources.sink.parameters]
+path = "results/coverage.log"
+format = "text"
+```
+
+The framework calls the route's logger or handler first, then calls the sink
+once for that record. Python logging level filters affect display independently
+of the sink. FileLogSink appends across runs. Relative paths resolve against the
+TOML directory. Text mode writes UTF-8 followed by LF. For binary coverage set
+`format = "binary"` and send one complete base64-encoded chunk per log message.
+The sink validates each chunk and appends its decoded bytes, in arrival order.
+The C harness allows 63 text bytes per message, so up to 45 raw bytes fit per
+base64 chunk. File and decode errors propagate to the caller.
+
+For application-specific processing, point `class` to your own importable
+`module:ClassName`. Its constructor receives the parameters as keyword arguments.
+Implement `write(self, record: TargetLog) -> None` as specified by `tzen.LogSink`.
+One instance belongs to each configured source per client. The framework calls
+an optional `close()` when the client closes, including on setup failure.

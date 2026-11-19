@@ -1,11 +1,12 @@
 """Single-threaded test harness client with bounded receive deadlines."""
 from collections import deque
+from contextlib import ExitStack
 from dataclasses import dataclass
 import time
 from ttp.python import ttp
 from tzen import framing
 from .transport import TzenTransport
-from .events import EventDispatcher, ExecutionRef, _ExecutionInbox
+from .events import EventDispatcher, ExecutionRef, _ExecutionInbox, _target_log
 
 
 class CommandError(RuntimeError):
@@ -29,6 +30,11 @@ class TestResult:
     events: list
 
     @property
+    def logs(self):
+        """Testcase diagnostics as public Python records, in receive order."""
+        return [_target_log(event) for event in self.events if event.WhichOneof("payload") == "log"]
+
+    @property
     def passed(self):
         return self.status == ttp.TestFinishedEvent.SUCCESS
 
@@ -43,6 +49,8 @@ class Client:
         if timeout <= 0 or max_queued_events <= 0:
             raise ValueError("timeout and queue bound must be positive")
         self.transport = transport
+        self._resources = ExitStack()
+        self._resources.callback(transport.close)
         self.timeout = timeout
         self.max_queued_events = max_queued_events
         self._seq = self._run = 1
@@ -62,7 +70,7 @@ class Client:
 
     def close(self):
         self._check_readable()
-        self.transport.close()
+        self._resources.close()
 
     def __enter__(self):
         return self

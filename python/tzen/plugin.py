@@ -11,7 +11,6 @@ import warnings
 import pytest
 from ttp.python import ttp
 
-from .client import Client
 from .config import Settings
 from .declarations import declare, documentation_record, write_documentation, collection_description
 from .execution import RemoteFailure, TzenCase
@@ -44,7 +43,7 @@ class SessionState:
         self.error = None
         self.targets = {}
 
-    def bind(self, declaration, nodeid):
+    def bind(self, declaration, nodeid, module):
         target = declaration.documentation.target
         previous = self.targets.get(target)
         if previous is not None and previous != nodeid:
@@ -52,18 +51,27 @@ class SessionState:
         self.targets[target] = nodeid
         if self.offline:
             return None
+        path = self.path
+        if path is None:
+            for directory in module.parents:
+                path = next((directory / name for name in ("tzen-host.toml", "tzen.toml")
+                             if (directory / name).is_file()), None)
+                if path or directory == self.config.rootpath:
+                    break
+            if self.registry is not None and self.loaded_path != path:
+                raise ValueError("Multiple Tzen configurations selected; specify --tzen-config")
         if self.error is not None:
             raise RuntimeError(self.error)
         if self.registry is None:
             try:
-                if self.path is None:
-                    raise ValueError("Tzen tests require --tzen-config or a root tzen.toml")
+                if path is None:
+                    raise ValueError("Tzen tests require --tzen-config, tzen-host.toml or tzen.toml")
                 if getattr(self.config.option, "numprocesses", None) or hasattr(self.config, "workerinput"):
                     raise ValueError("Tzen requires sequential execution; disable pytest-xdist (-n 0)")
-                self.settings = Settings.load(self.path)
-                transport = self.settings.open_transport()
-                self.config.add_cleanup(transport.close)
-                self.client = Client(transport, self.settings.command_timeout, self.settings.max_events)
+                self.loaded_path = path
+                self.settings = Settings.load(path)
+                self.client = self.settings.open_client()
+                self.config.add_cleanup(self.client.close)
                 self.registry = self.client.discover()
             except Exception as error:
                 self.error = f"Tzen discovery failed: {error}"
@@ -79,10 +87,10 @@ def pytest_configure(config):
     if config.getoption("tzen_offline") and not config.getoption("collectonly"):
         raise pytest.UsageError("--tzen-offline requires --collect-only")
     selected = config.getoption("tzen_config")
-    path = Path(selected).resolve() if selected else config.rootpath / "tzen.toml"
+    path = Path(selected).resolve() if selected else None
     if selected and (not path.is_file() or path.suffix != ".toml"):
         raise pytest.UsageError("--tzen-config must name an existing .toml file")
-    config.stash[_STATE] = SessionState(config, path if selected or path.is_file() else None)
+    config.stash[_STATE] = SessionState(config, path)
 
 
 def _execution_function(declaration):
@@ -127,7 +135,7 @@ def pytest_pycollect_makeitem(collector, name, obj):
                 raise ValueError(message)
             warnings.warn(pytest.PytestWarning(message), stacklevel=2)
         state = collector.config.stash[_STATE]
-        test = state.bind(declaration, f"{collector.nodeid}::{name}")
+        test = state.bind(declaration, f"{collector.nodeid}::{name}", collector.path)
         return TzenItem.from_parent(
             collector, name=name, callobj=_execution_function(declaration),
             test=test, declaration=declaration,
@@ -200,6 +208,8 @@ def tzen_case(request):
         if case.execution.run_id is not None:
             item.user_properties.extend([("tzen_index", item.test.index),
                                          ("tzen_run_id", case.execution.run_id)])
+        if case.execution.result is not None:
+            slave.settings.receive_after_test(slave.client, case.execution.result)
 
 
 @pytest.hookimpl(wrapper=True)

@@ -24,6 +24,9 @@ bool host_emit_deferred_logs(void)
         if (!tzen_emit_log(HOST_SOURCE_COVERAGE, &pending[i], TZEN_LOG_INFO,
                            "Demo coverage summary after TestFinished (synthetic)"))
             return false;
+        if (!tzen_emit_log(HOST_SOURCE_COVERAGE2, &pending[i], TZEN_LOG_INFO,
+                           "Synthetic coverage2 sample"))
+            return false;
     }
     pending_count = 0U;
     return true;

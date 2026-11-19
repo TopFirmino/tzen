@@ -4,3 +4,30 @@ test_timeout = 15.0
 
 [tzen.transport]
 class = "examples.Host.python.pipe_transport:PipeTransport"
+
+[[tzen.logging.sources]]
+source = 1
+logger = "tzen.target.system"
+
+[[tzen.logging.sources]]
+source = 7
+logger = "tzen.target.coverage"
+after_test_timeout = 2.0
+
+[tzen.logging.sources.sink]
+class = "tzen:FileLogSink"
+
+[tzen.logging.sources.sink.parameters]
+path = "results/coverage.log"
+format = "text"
+
+[[tzen.logging.sources]]
+source = 8
+logger = "tzen.target.coverage2"
+after_test_timeout = 2.0
+
+[tzen.logging.sources.sink]
+class = "examples.Host.python.coverage2:Coverage2Sink"
+
+[tzen.logging.sources.sink.parameters]
+path = "results/coverage2.jsonl"

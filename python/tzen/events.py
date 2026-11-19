@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
-from typing import Callable
+import logging
+from enum import IntEnum
+from typing import Callable, Protocol
 
 from ttp.python import ttp
 
@@ -15,6 +17,36 @@ EventCallback = Callable[[ttp.TargetToHost], None]
 class ExecutionRef:
     run_id: int
     test_index: int
+
+
+class LogLevel(IntEnum):
+    INFO = logging.INFO
+    WARNING = logging.WARNING
+    ERROR = logging.ERROR
+
+
+@dataclass(frozen=True)
+class TargetLog:
+    source: int
+    level: LogLevel
+    message: str
+    execution: ExecutionRef | None
+
+
+class LogHandler(Protocol):
+    def __call__(self, record: TargetLog, /) -> None: ...
+
+
+def _target_log(event: ttp.TargetToHost) -> TargetLog:
+    log = event.log
+    return TargetLog(log.source, LogLevel[ttp.LogEvent.Level.Name(log.level)],
+                     log.message, execution_of(event))
+
+
+class TestStatus(IntEnum):
+    SUCCESS = ttp.TestFinishedEvent.SUCCESS
+    FAIL = ttp.TestFinishedEvent.FAIL
+    ABORTED = ttp.TestFinishedEvent.ABORTED
 
 
 def execution_of(event: ttp.TargetToHost) -> ExecutionRef | None:
@@ -91,6 +123,15 @@ class EventDispatcher:
         subscription = Subscription(self, callback, EventFilter(source, execution, kind, global_only))
         self._subscriptions.append(subscription)
         return subscription
+
+    def subscribe_logs(self, handler: LogHandler, *, source: int | None = None,
+                       execution: ExecutionRef | None = None,
+                       global_only: bool = False) -> Subscription:
+        """Deliver immutable Python records for matching logs in receive order."""
+        if not callable(handler):
+            raise TypeError("handler must be callable")
+        return self.subscribe(lambda event: handler(_target_log(event)), kind="log",
+                              source=source, execution=execution, global_only=global_only)
 
     def dispatch(self, event: ttp.TargetToHost) -> int:
         if self.dispatching:

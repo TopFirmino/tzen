@@ -437,7 +437,7 @@ static void tzen_th_result_locked(const TargetToHost *message, TzenWorker *worke
     size_t pos = testharness_state.results.write_idx;
     testharness_state.results.slots[pos].message = *message;
     testharness_state.results.slots[pos].terminal = terminal;
-    testharness_state.results.slots[pos].worker_id = (uint8_t)(worker - testharness_state.workers);
+    testharness_state.results.slots[pos].worker_id = worker != NULL ? (uint8_t)(worker - testharness_state.workers) : 0U;
     testharness_state.results.write_idx = (pos + 1U) % TZEN_TH_RESULT_QUEUE_DEPTH;
     ++testharness_state.results.count;
 }
@@ -683,9 +683,41 @@ bool tzen_log(TzenContext_t *ctx, TzenLogLevel_t level, const char *text)
     TzenWorker *worker = tzen_th_find_context_locked(ctx);
     if (worker != NULL && !worker->terminal_queued && testharness_state.transport_ok &&
         testharness_state.results.count + testharness_state.results.reserved < TZEN_TH_RESULT_QUEUE_DEPTH) {
+        message.payload.log.source = TZEN_SOURCE_TEST;
+        message.payload.log.scope = LogEvent_Scope_EXECUTION;
         message.payload.log.run_id = worker->ctx.run_id;
         message.payload.log.test_index = worker->ctx.test_index;
         tzen_th_result_locked(&message, worker, false);
+        queued = true;
+    }
+    TZEN_TH_EXIT_CRITICAL_SECTION_WORKER_QUEUE();
+    return queued;
+}
+
+bool tzen_emit_log(uint32_t source, const TzenExecutionRef_t *execution,
+                   TzenLogLevel_t level, const char *text)
+{
+    TargetToHost message = TargetToHost_init_zero;
+    if (text == NULL || level < TZEN_LOG_INFO || level > TZEN_LOG_ERROR ||
+        (source == TZEN_SOURCE_TEST && execution == NULL)) return false;
+    size_t len = 0U;
+    while (len < sizeof(message.payload.log.message) && text[len] != '\0') ++len;
+    if (len == sizeof(message.payload.log.message)) return false;
+    message.which_payload = TargetToHost_log_tag;
+    message.payload.log.level = (LogEvent_Level)level;
+    message.payload.log.source = source;
+    message.payload.log.scope = execution == NULL ? LogEvent_Scope_GLOBAL : LogEvent_Scope_EXECUTION;
+    if (execution != NULL) {
+        message.payload.log.run_id = execution->run_id;
+        message.payload.log.test_index = execution->test_index;
+    }
+    memcpy(message.payload.log.message, text, len + 1U);
+    bool queued = false;
+    TZEN_TH_ENTER_CRITICAL_SECTION_WORKER_QUEUE();
+    if (testharness_state.initialized && testharness_state.send_bytes != NULL &&
+        testharness_state.transport_ok && testharness_state.results.count +
+        testharness_state.results.reserved < TZEN_TH_RESULT_QUEUE_DEPTH) {
+        tzen_th_result_locked(&message, NULL, false);
         queued = true;
     }
     TZEN_TH_EXIT_CRITICAL_SECTION_WORKER_QUEUE();

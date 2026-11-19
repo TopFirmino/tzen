@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import inspect
 import json
+import logging
 from pathlib import Path
 import warnings
 
@@ -154,6 +155,17 @@ class TzenItem(pytest.Function):
         return super().repr_failure(excinfo)
 
 
+@pytest.fixture(scope="session")
+def tzen_client(request):
+    """Shared client: subscribe through client.events, or receive after a run."""
+    state = request.config.stash[_STATE]
+    if state.broken:
+        pytest.skip("Slave connection is unusable after an earlier protocol/transport error")
+    if state.client is None:
+        raise RuntimeError("tzen_client requires a configured target")
+    return state.client
+
+
 @pytest.fixture
 def tzen_case(request):
     """Provide run-scoped control to the Python counterpart."""
@@ -163,58 +175,41 @@ def tzen_case(request):
     slave = item.config.stash[_STATE]
     if slave.broken:
         pytest.skip("Slave connection is unusable after an earlier protocol/transport error")
-    diagnostics = []
+    logger = logging.getLogger(f"tzen.target.test[{item.test.name}]")
 
     def broken():
         slave.broken = True
 
     def record(event):
         if event.WhichOneof("payload") == "log":
-            diagnostics.append(f"{ttp.LogEvent.Level.Name(event.log.level)}: {event.log.message}")
-        else:
-            execution = event.test_event
-            if execution.WhichOneof("event") == "step":
-                outcome = "PASS" if execution.step.success else "FAIL"
-                diagnostics.append(f"Step {execution.step.step_number}: {outcome}")
-            elif execution.WhichOneof("event") == "sync":
-                diagnostics.append(f"Sync {execution.sync.sync_id}: waiting")
+            level = ttp.LogEvent.Level.Name(event.log.level)
+            logger.log(logging.getLevelName(level), "%s", event.log.message)
+        elif event.test_event.WhichOneof("event") == "step":
+            step = event.test_event.step
+            logger.info("Step %d: %s", step.step_number, "PASS" if step.success else "FAIL")
+        elif event.test_event.WhichOneof("event") == "sync":
+            logger.info("Sync %d: waiting", event.test_event.sync.sync_id)
 
     case = TzenCase(slave.client, item.test, slave.settings.test_timeout, record, broken)
     yield case
     # Covers misuse such as entering a context manually and abandoning it.
     if case.execution is not None:
         case.execution._abort()
+        if case.execution._inbox is not None:
+            case.execution._inbox.close()
         if case.execution.run_id is not None:
             item.user_properties.extend([("tzen_index", item.test.index),
                                          ("tzen_run_id", case.execution.run_id)])
-    if diagnostics:
-        item.add_report_section("teardown", "Tzen", "\n".join(diagnostics))
 
 
 @pytest.hookimpl(wrapper=True)
 def pytest_runtest_makereport(item, call):
-    # Make slave diagnostics visible on the call report, not only teardown.
     report = yield
     if isinstance(item, TzenItem) and call.when == "call":
         if item.step_results:
-            report.sections.append(("Tzen Python steps", "\n".join(
-                f"{result.outcome.upper()}: {result.description}"
-                + (f" — {result.message}" if result.message else "") for result in item.step_results
-            )))
             serialized = json.dumps([asdict(result) for result in item.step_results])
             item.user_properties.append(("tzen_steps", serialized))
             report.user_properties.append(("tzen_steps", serialized))
-        case = item.funcargs.get("tzen_case")
-        if case is not None and case.execution is not None:
-            logs = []
-            for event in case.execution.events:
-                if event.WhichOneof("payload") == "log":
-                    logs.append(event.log.message)
-                elif event.test_event.WhichOneof("event") == "step":
-                    step = event.test_event.step
-                    logs.append(f"Step {step.step_number}: {'PASS' if step.success else 'FAIL'}")
-            if logs:
-                report.sections.append(("Tzen", "\n".join(logs)))
     return report
 
 

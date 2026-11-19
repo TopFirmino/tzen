@@ -1,11 +1,14 @@
 """Subprocess pipes with periodic reads for the tzen client deadlines."""
+from pathlib import Path
 import queue
 import subprocess
 import threading
 
 
 class PipeTransport:
-    def __init__(self, executable):
+    def __init__(self, executable=None):
+        if executable is None:
+            executable = Path(__file__).resolve().parents[1] / "C" / "tzen_host.exe"
         self.process = subprocess.Popen([str(executable)], stdin=subprocess.PIPE,
                                         stdout=subprocess.PIPE, bufsize=0)
         self._bytes = queue.Queue(maxsize=65536)

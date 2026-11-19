@@ -90,7 +90,7 @@ def trace(pytester):
 
 def test_results_sync_logs_and_cleanup(pytester):
     prepare(pytester)
-    result = pytester.runpytest("-v")
+    result = pytester.runpytest("-v", "--log-level=INFO")
     result.assert_outcomes(passed=1, failed=2)
     result.stdout.fnmatch_lines(["*slave diagnostic*", "*ABORTED*"])
     operations = trace(pytester)

@@ -33,6 +33,11 @@ typedef enum _LogEvent_Level {
     LogEvent_Level_ERROR = 2
 } LogEvent_Level;
 
+typedef enum _LogEvent_Scope {
+    LogEvent_Scope_EXECUTION = 0, /* run_id and test_index are meaningful (legacy default). */
+    LogEvent_Scope_GLOBAL = 1 /* No execution correlation; identity fields must be zero. */
+} LogEvent_Scope;
+
 /* Struct definitions */
 /* ============================================================================
  3. DETTAGLIO COMANDI E RISPOSTE
@@ -114,8 +119,11 @@ typedef struct _TestEvent {
 typedef struct _LogEvent {
     LogEvent_Level level;
     char message[64]; /* In Nanopb .options: max_size = 64 */
-    uint32_t run_id; /* Execution that emitted this log (zero is valid). */
-    uint32_t test_index; /* Index of the test that emitted this log. */
+    /* Correlation is data: it remains valid after TestFinished. */
+    uint32_t run_id; /* Zero is valid when scope == EXECUTION. */
+    uint32_t test_index;
+    uint32_t source; /* 0 = testcase; 1..UINT32_MAX = application sources. */
+    LogEvent_Scope scope;
 } LogEvent;
 
 typedef struct _TargetToHost {
@@ -153,6 +161,10 @@ extern "C" {
 #define _LogEvent_Level_MAX LogEvent_Level_ERROR
 #define _LogEvent_Level_ARRAYSIZE ((LogEvent_Level)(LogEvent_Level_ERROR+1))
 
+#define _LogEvent_Scope_MIN LogEvent_Scope_EXECUTION
+#define _LogEvent_Scope_MAX LogEvent_Scope_GLOBAL
+#define _LogEvent_Scope_ARRAYSIZE ((LogEvent_Scope)(LogEvent_Scope_GLOBAL+1))
+
 
 #define TargetToHost_status_ENUMTYPE ResultCode
 
@@ -169,6 +181,7 @@ extern "C" {
 #define TestFinishedEvent_status_ENUMTYPE TestFinishedEvent_Status
 
 #define LogEvent_level_ENUMTYPE LogEvent_Level
+#define LogEvent_scope_ENUMTYPE LogEvent_Scope
 
 
 /* Initializer values for message structs */
@@ -185,7 +198,7 @@ extern "C" {
 #define TestStepEvent_init_default               {0, 0}
 #define SyncWaitEvent_init_default               {0}
 #define TestFinishedEvent_init_default           {_TestFinishedEvent_Status_MIN}
-#define LogEvent_init_default                    {_LogEvent_Level_MIN, "", 0, 0}
+#define LogEvent_init_default                    {_LogEvent_Level_MIN, "", 0, 0, 0, _LogEvent_Scope_MIN}
 #define HostToTarget_init_zero                   {0, 0, {GetTestsCmd_init_zero}}
 #define TargetToHost_init_zero                   {0, _ResultCode_MIN, 0, {GetTestsResp_init_zero}}
 #define GetTestsCmd_init_zero                    {0}
@@ -199,7 +212,7 @@ extern "C" {
 #define TestStepEvent_init_zero                  {0, 0}
 #define SyncWaitEvent_init_zero                  {0}
 #define TestFinishedEvent_init_zero              {_TestFinishedEvent_Status_MIN}
-#define LogEvent_init_zero                       {_LogEvent_Level_MIN, "", 0, 0}
+#define LogEvent_init_zero                       {_LogEvent_Level_MIN, "", 0, 0, 0, _LogEvent_Scope_MIN}
 
 /* Field tags (for use in manual encoding/decoding) */
 #define GetTestsResp_total_tests_tag             1
@@ -231,6 +244,8 @@ extern "C" {
 #define LogEvent_message_tag                     2
 #define LogEvent_run_id_tag                      3
 #define LogEvent_test_index_tag                  4
+#define LogEvent_source_tag                      5
+#define LogEvent_scope_tag                       6
 #define TargetToHost_seq_id_tag                  1
 #define TargetToHost_status_tag                  2
 #define TargetToHost_tests_count_tag             3
@@ -339,7 +354,9 @@ X(a, STATIC,   SINGULAR, UENUM,    status,            1)
 X(a, STATIC,   SINGULAR, UENUM,    level,             1) \
 X(a, STATIC,   SINGULAR, STRING,   message,           2) \
 X(a, STATIC,   SINGULAR, UINT32,   run_id,            3) \
-X(a, STATIC,   SINGULAR, UINT32,   test_index,        4)
+X(a, STATIC,   SINGULAR, UINT32,   test_index,        4) \
+X(a, STATIC,   SINGULAR, UINT32,   source,            5) \
+X(a, STATIC,   SINGULAR, UENUM,    scope,             6)
 #define LogEvent_CALLBACK NULL
 #define LogEvent_DEFAULT NULL
 
@@ -382,11 +399,11 @@ extern const pb_msgdesc_t LogEvent_msg;
 #define GetTestsCmd_size                         0
 #define GetTestsResp_size                        6
 #define HostToTarget_size                        20
-#define LogEvent_size                            79
+#define LogEvent_size                            87
 #define SyncReleaseCmd_size                      12
 #define SyncWaitEvent_size                       6
 #define TTP_PB_H_MAX_SIZE                        TargetToHost_size
-#define TargetToHost_size                        89
+#define TargetToHost_size                        97
 #define TestEvent_size                           22
 #define TestFinishedEvent_size                   2
 #define TestStepEvent_size                       8

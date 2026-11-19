@@ -1,7 +1,12 @@
 """Class declarations and ordered Python steps for the C host registry."""
+import logging
+
 import pytest
 
 from tzen import TzenRemoteTestCase, TzenCompanionTestCase, step
+
+
+logger = logging.getLogger("host.python")
 
 
 class TestYield(TzenRemoteTestCase):
@@ -49,6 +54,7 @@ class TestSynchronization(TzenCompanionTestCase):
 
     @step("Wait for C synchronization point 42", critical=True)
     def wait_for_target(self):
+        logger.info("Waiting for target")
         self.run.wait_sync(42)
         assert self.run.result is None
 
@@ -62,6 +68,7 @@ class TestSynchronization(TzenCompanionTestCase):
     @step("Release C to finish its remaining steps", critical=True)
     def release_target(self):
         assert not self.temporary_probe.exists(), "Step fixture was not finalized"
+        logger.info("Probe verified, releasing target")
         self.run.release(42)
 
 

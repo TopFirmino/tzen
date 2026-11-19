@@ -73,7 +73,11 @@ int main(int argc, char **argv) {
         return subprocess.check_output([str(self.exe), body.hex(), direction], text=True).splitlines()
 
     def test_interoperability(self):
-        messages = [ttp.HostToTarget(), ttp.make_get_tests(),
+        messages = [ttp.TargetToHost(log=ttp.LogEvent(source=0xFFFFFFFF,
+                        scope=ttp.LogEvent.GLOBAL, message='global')),
+                    ttp.TargetToHost(log=ttp.LogEvent(source=7, run_id=0, test_index=0,
+                        message='zero execution')),
+                    ttp.HostToTarget(), ttp.make_get_tests(),
                     ttp.make_get_test_info(123), ttp.make_execute_test(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF),
                     ttp.make_abort_test(1), ttp.make_sync_release(1, 1),
                     ttp.TargetToHost(),
@@ -82,7 +86,7 @@ int main(int argc, char **argv) {
                     ttp.TargetToHost(seq_id=0xFFFFFFFF, test_info=ttp.GetTestInfoResp(
                         index=0xFFFFFFFF, name='x'*31, total_steps=0xFFFFFFFF)),
                     ttp.TargetToHost(seq_id=0xFFFFFFFF, status=ttp.RESULT_ERR_INVALID,
-                        log=ttp.LogEvent(level=ttp.LogEvent.ERROR, message='x'*63,
+                        log=ttp.LogEvent(source=0xFFFFFFFF, level=ttp.LogEvent.ERROR, message='x'*63,
                             run_id=0xFFFFFFFF, test_index=0xFFFFFFFF)),
                     ttp.TargetToHost(seq_id=0xFFFFFFFF, status=ttp.RESULT_ERR_INVALID,
                         test_event=ttp.TestEvent(run_id=0xFFFFFFFF, test_index=0xFFFFFFFF,

@@ -158,3 +158,38 @@ Run `make -C examples/Host/C check` or
 binary Master/Slave transfers, one/two live worker threads, overlapping same-ID
 calls, 1,000 executions, queue saturation, cleanup and minimal result capacity.
 These are host checks, without flashing or target multicore/ISR validation.
+
+
+## Logs independent of testcase lifetime
+
+`tzen_log(ctx, level, text)` and `tzen_logf` remain the testcase shortcuts:
+source `TZEN_SOURCE_TEST` (0), execution scope, and identity from the callback.
+For other producers use `tzen_emit_log(source, execution, level, text)`:
+
+```c
+/* Application-defined source IDs; 0 is reserved for testcase diagnostics. */
+#define SOURCE_COVERAGE 7U
+
+/* No testcase association. Call after harness initialization. */
+bool accepted = tzen_emit_log(SOURCE_COVERAGE, NULL, TZEN_LOG_INFO, "summary");
+
+/* Inside a testcase callback, copy identity into application-owned storage. */
+TzenExecutionRef_t origin = {ctx->run_id, ctx->test_index};
+/* Later, even after TestFinished and worker reuse: */
+accepted = tzen_emit_log(SOURCE_COVERAGE, &origin, TZEN_LOG_INFO, "late data");
+```
+
+Persist the identity by value when using it later; never retain `ctx` or a pointer
+into its scratchpad. The API does not validate whether the execution is active.
+`NULL` explicitly means global scope; run ID zero remains valid. A global log from
+source 0 is rejected. Text and identity are copied into the existing bounded
+result queue without heap allocation. Queue reservations for worker control
+results remain protected. Call from task context; concurrent callers require the
+existing worker-queue critical-section hooks.
+
+`true` means accepted into the queue, not delivered or acknowledged. The main
+function transmits; `tzen_th_transport_ok()` exposes transport failure. Invalid
+arguments, text longer than 63 bytes, full queue, missing sender, uninitialized
+harness or failed transport return `false`. There are no retries or collection
+completion events. Source meanings and any collection policy belong to the
+application. Update Python and C bindings together for custom/global routing.

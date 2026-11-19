@@ -116,6 +116,19 @@ void tzen_sync(TzenContext_t *ctx, uint32_t sync_id);
  */
 bool tzen_log(TzenContext_t *ctx, TzenLogLevel_t level, const char *message);
 
+/** Queue a log independently of any worker, after init, from task context.
+ * source is application-defined (0 reserved for testcase diagnostics).
+ * execution == NULL means global; source 0 requires an execution identity.
+ * Copies identity and text before returning; no active-run lookup is performed.
+ * Returns true only for queue acceptance, NOT delivery/ACK. Main transmits later;
+ * inspect tzen_th_transport_ok() for transport errors. False on invalid arguments,
+ * missing sender, uninitialized harness, transport failure or queue backpressure.
+ * Same 63-byte bound as tzen_log; no allocation, blocking, truncation or retries.
+ * Concurrent producers require the configured worker-queue critical-section hooks.
+ */
+bool tzen_emit_log(uint32_t source, const TzenExecutionRef_t *execution,
+                   TzenLogLevel_t level, const char *message);
+
 /**
  * @brief Queue a formatted diagnostic log; same return contract as tzen_log.
  * Formatting failure or output over 63 bytes returns false without enqueueing.

@@ -5,6 +5,7 @@ import time
 from ttp.python import ttp
 from tzen import framing
 from .transport import TzenTransport
+from .events import EventDispatcher, ExecutionRef, _ExecutionInbox
 
 
 class CommandError(RuntimeError):
@@ -45,6 +46,7 @@ class Client:
         self.timeout = timeout
         self.max_queued_events = max_queued_events
         self._seq = self._run = 1
+        self.events = EventDispatcher()
         self._events = deque()
         self._frame = bytearray()
         self._in_frame = self._dropping = False
@@ -54,7 +56,12 @@ class Client:
         from .transport import SerialTransport
         return cls(SerialTransport(port, baudrate, reset_wait), timeout)
 
+    def _check_readable(self):
+        if self.events.dispatching:
+            raise RuntimeError("event callbacks must not read, request or close the client")
+
     def close(self):
+        self._check_readable()
         self.transport.close()
 
     def __enter__(self):
@@ -85,6 +92,7 @@ class Client:
         raise TimeoutError("no complete TTP response before deadline; command outcome may be unknown")
 
     def request(self, command):
+        self._check_readable()
         if not isinstance(command, ttp.HostToTarget):
             raise TypeError("expected HostToTarget command")
         command.seq_id = self._seq
@@ -94,9 +102,11 @@ class Client:
         while True:
             response = self._wire(deadline)
             if response.seq_id == 0:
-                if len(self._events) >= self.max_queued_events:
-                    raise BufferError("too many queued harness events")
-                self._events.append(response)
+                handled = self.events.dispatch(response)
+                if not handled:
+                    if len(self._events) >= self.max_queued_events:
+                        raise BufferError("too many queued harness events")
+                    self._events.append(response)
             elif response.seq_id == command.seq_id:
                 if response.status != ttp.RESULT_OK:
                     raise CommandError(response)
@@ -105,9 +115,38 @@ class Client:
                 raise RuntimeError(f"unexpected response sequence {response.seq_id}")
 
     def receive(self, timeout=None):
+        """Read one envelope and dispatch new events once, including after a test.
+
+        Events buffered during request() were already dispatched at arrival.
+        Subscriptions are synchronous; no background reader is started.
+        """
+        self._check_readable()
         if self._events:
             return self._events.popleft()
-        return self._wire(time.monotonic() + (self.timeout if timeout is None else timeout))
+        event = self._wire(time.monotonic() + (self.timeout if timeout is None else timeout))
+        self.events.dispatch(event)
+        return event
+
+    def _start_execution(self, index, on_received=None):
+        run_id = self._run
+        self._run = self._run % 0xFFFFFFFF + 1
+        inbox = _ExecutionInbox(self.events, ExecutionRef(run_id, index), self.max_queued_events, on_received)
+        try:
+            self.start(index, run_id)
+        except BaseException:
+            inbox.close()
+            raise
+        return run_id, inbox
+
+    def _receive_execution(self, inbox, deadline):
+        while not inbox.events:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("test run exceeded deadline")
+            event = self.receive(remaining)
+            if event.seq_id or event.WhichOneof("payload") not in ("test_event", "log"):
+                raise RuntimeError("unexpected response in test event stream")
+        return inbox.events.popleft()
 
     def discover(self):
         response = self.request(ttp.make_get_tests())
@@ -153,7 +192,7 @@ class Client:
             info = self.get_test_info(test)
         if info is None:
             raise KeyError(test)
-        run_id = self.start(info.index)
+        run_id, inbox = self._start_execution(info.index)
         events = []
         deadline = time.monotonic() + timeout
         try:
@@ -161,7 +200,7 @@ class Client:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise TimeoutError("test run exceeded deadline")
-                event = self.receive(remaining)
+                event = self._receive_execution(inbox, deadline)
                 if event.seq_id:
                     raise RuntimeError("unexpected command response in event stream")
                 if len(events) >= self.max_queued_events:
@@ -195,3 +234,6 @@ class Client:
             except Exception:
                 pass
             raise
+
+        finally:
+            inbox.close()

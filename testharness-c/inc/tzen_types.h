@@ -27,6 +27,15 @@ typedef enum {
   TZEN_LOG_ERROR = 2
 } TzenLogLevel_t;
 
+/** Source 0 is reserved for testcase diagnostics; other IDs are application-defined. */
+#define TZEN_SOURCE_TEST 0U
+
+/** Copy this identity inside a callback for emission after the worker is released. */
+typedef struct {
+  uint32_t run_id;
+  uint32_t test_index;
+} TzenExecutionRef_t;
+
 /** Final test result (mapped 1:1 to TestFinishedEvent.Status in the .proto file).
  */
 typedef enum {

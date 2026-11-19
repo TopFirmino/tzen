@@ -376,12 +376,62 @@ static void concurrent(void)
 }
 #endif
 
+static void independent_logs(void)
+{
+    reset();
+    TzenConfig_t no_sender = config;
+    no_sender.send_bytes = NULL;
+    assert(tzen_th_init(&no_sender));
+    assert(!tzen_emit_log(7U, NULL, TZEN_LOG_INFO, "no sender"));
+    reset();
+    assert(!tzen_emit_log(TZEN_SOURCE_TEST, NULL, TZEN_LOG_INFO, "invalid"));
+    assert(!tzen_emit_log(7U, NULL, (TzenLogLevel_t)99, "invalid"));
+    assert(!tzen_emit_log(7U, NULL, TZEN_LOG_INFO, NULL));
+    assert(!tzen_emit_log(7U, NULL, TZEN_LOG_INFO,
+        "1234567890123456789012345678901234567890123456789012345678901234"));
+    assert(tzen_emit_log(7U, NULL, TZEN_LOG_INFO, "global"));
+    tzen_th_main_function();
+    assert(used == 1U && output[0].payload.log.source == 7U);
+    assert(output[0].payload.log.scope == LogEvent_Scope_GLOBAL);
+    assert(output[0].payload.log.run_id == 0U && output[0].payload.log.test_index == 0U);
+    mode = TZEN_STEP_DONE_PASS;
+    assert(START(0U) == ResultCode_RESULT_OK);
+    tzen_th_worker_main_function(0U);
+    tzen_th_main_function();
+    assert(terminals[0] == 1U && tzen_get_state() == TZEN_ENGINE_IDLE);
+    /* Reuse the worker: a delayed producer retains only a copied identity. */
+    TzenExecutionRef_t original = {0U, 0U};
+    assert(START(1U) == ResultCode_RESULT_OK);
+    tzen_th_worker_main_function(0U);
+    tzen_th_main_function();
+    assert(tzen_emit_log(7U, &original, TZEN_LOG_INFO, "late"));
+    original.run_id = 99U;
+    tzen_th_main_function();
+    const LogEvent *late = &output[used - 1U].payload.log;
+    assert(late->scope == LogEvent_Scope_EXECUTION && late->run_id == 0U);
+    assert(late->source == 7U && late->test_index == 0U);
+    /* External messages also honor reserved control-event slots. */
+    testharness_state.results.reserved = 2U;
+    size_t accepted = 0U;
+    while (tzen_emit_log(7U, NULL, TZEN_LOG_INFO, "flood")) ++accepted;
+    assert(accepted == TZEN_TH_RESULT_QUEUE_DEPTH - 2U);
+    testharness_state.results.reserved = 0U;
+    tzen_th_main_function();
+    send_ok = false;
+    assert(tzen_emit_log(7U, NULL, TZEN_LOG_INFO, "send failure"));
+    tzen_th_main_function();
+    assert(!tzen_th_transport_ok());
+    assert(!tzen_emit_log(7U, NULL, TZEN_LOG_INFO, "rejected"));
+    reset();
+}
+
 int main(void)
 {
 #ifdef TZEN_TH_TEST_WORKERS_CONCURRENT
     main_thread = pthread_self();
 #endif
-    lifecycle(); synchronization(); queues(); transport_failure();
+    assert(!tzen_emit_log(7U, NULL, TZEN_LOG_INFO, "before init"));
+    lifecycle(); synchronization(); queues(); transport_failure(); independent_logs();
 #ifdef TZEN_TH_TEST_WORKERS_CONCURRENT
     concurrent();
 #endif

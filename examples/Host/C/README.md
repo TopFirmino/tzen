@@ -2,7 +2,11 @@
 
 ## Pytest documentation and Python counterpart
 
-From the repository root:
+From the repository root, build the host with `make -C examples/Host/C`, then run
+`pytest examples/Host/tests -v -rP --log-level=INFO`. The example selects its own transport
+configuration by default. The full run includes one intentional failure.
+
+Additional commands from the repository root:
 
 ```sh
 python -m pip install -e .
@@ -38,7 +42,7 @@ configured transport. Its JSON is marked unverified. Live collection validates
 the target names against the C registry, exports metadata and descriptions,
 and executes neither test bodies nor fixtures. `-vv` shows the descriptions
 and ordered Python steps. JUnit includes per-step results in `tzen_steps`;
-add `-rA` to display successful Python step reports in the terminal.
+add `-rP --log-level=INFO` to see Python and C log records for passing cases in host observation order.
 The passing execution command selects the two positive cases. Remove
 `-k "not Expected"` to include the intentional negative example: pytest then
 reports two passes and one failure, returning exit code 1 by design.
@@ -100,3 +104,41 @@ the complete context and scratchpad helper; `tzen.h` includes it for testcases.
 Keep the configuration identical across all translation units because scratchpad
 size affects the context layout. Configuration headers may include
 `tzen_types.h`, but should not include `tzen.h` or `tzen_context.h`.
+
+
+## Source-aware logs, including after TestFinished
+
+`make -C examples/Host/C check` now prints the messages as Python receives them:
+
+- Source `1` (`system`): a global startup message without an execution identity.
+- Source `0` (`test`): the existing automatic testcase diagnostics.
+- Source `7` (`coverage`): a **synthetic** summary emitted after each started
+  testcase's terminal event, including failure and synchronization abort.
+
+The teardown callback copies `(run_id, test_index)` into a bounded application
+buffer. On the next main-loop iteration, after the harness has transmitted the
+terminal result, `host_emit_deferred_logs()` queues the summary independently of
+the released worker. No context pointer is retained. This example is single
+threaded and treats enqueue failure as an explicit process error.
+
+`../python/log_output.py` supplies an application-owned callable subscribed through
+`client.events.subscribe(output)`. It labels sources and identities, verifies
+that each summary arrives after `TestFinished`, and checks that custom messages
+are absent from the standard testcase diagnostics. `run.py` explicitly continues
+receiving after each run because this demo expects exactly one known summary.
+There is no generic collection-completion event or background client polling.
+The text is illustrative; no real coverage or WCET measurement is performed.
+
+For visible logs from the pytest cases, run from the repository root:
+
+```sh
+python -m pytest examples/Host/tests --tzen-config examples/Host/tzen-host.toml -k "not Expected" -v -rP --log-level=INFO
+```
+
+The example's `conftest.py` installs a subscription using the library-provided
+`tzen_client` fixture and receives the deferred summary during fixture teardown.
+Remove `-k "not Expected"` to also see the intentional failure (pytest exits 1).
+The direct `make check` runner verifies that failure as an expected outcome and
+also exercises abort, so it exits successfully when all four runs behave correctly.
+
+Pytest captures target messages through Python logging. Use `--log-level=ERROR` for errors only. With `-rP`, pytest displays captured output for passing tests as well. The direct runner prints its own standalone trace.

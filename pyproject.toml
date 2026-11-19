@@ -21,4 +21,6 @@ package-dir = {tzen = "python/tzen"}
 tzen = ["py.typed"]
 
 [tool.pytest.ini_options]
+pythonpath = ["."]
+log_format = "%(levelname)s  %(name)s  %(message)s"
 testpaths = ["python/tests", "ttp/tests", "testharness-c/tests"]

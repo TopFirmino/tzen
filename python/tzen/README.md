@@ -220,3 +220,88 @@ TzenCompanionTestCase. Remove companion = ... and companion_paths.
 Function-based @testcase declarations are replaced by the explicit class types.
 Pass test paths to pytest. Offline documentation takes test paths instead of a
 TOML configuration.
+
+
+## Message sources and subscriptions
+
+Test diagnostics work without configuration: `Client.run()` and pytest companion
+runs collect source `0` (`SOURCE_TEST`) logs for their own `(run_id, test_index)`.
+Their results stop at `TestFinished`. Other sources and other executions do not
+become testcase diagnostics or cause identity-mismatch errors.
+
+Source IDs `1..UINT32_MAX` are application-defined (for example `7` for coverage).
+A log's `scope` explicitly distinguishes `EXECUTION` from `GLOBAL`. Execution IDs
+including `(0, 0)` are valid; a global log has no execution identity. Source `0`
+is reserved for testcase diagnostics and requires execution scope. The testcase
+is identified by `test_index`, and its invocation by `run_id`.
+
+Every `Client` has an `events` dispatcher. A callback receives the complete TTP
+`TargetToHost` envelope; a function, bound method, or callable object is enough.
+Subscriptions are additive: observing a testcase does not disable its built-in
+handling. The built-in test inbox uses the same subscriptions.
+
+```python
+from tzen import ExecutionRef, SOURCE_TEST
+
+COVERAGE = 7
+
+def save_coverage(event):
+    print(event.log.message)
+
+with client.events.subscribe(save_coverage, source=COVERAGE):
+    result = client.run("My test")
+    # If the application expects another message after the test:
+    client.receive(timeout=2.0)
+
+# Optional filters; None means any. All supplied filters must match.
+subscription = client.events.subscribe(
+    save_coverage, source=COVERAGE, execution=ExecutionRef(42, 3)
+)
+subscription.close()  # idempotent
+```
+
+Other filters are `kind="log"` / `kind="test_event"` and `global_only=True`.
+An unfiltered subscription observes all asynchronous events. `execution_of(event)`
+returns an `ExecutionRef` or `None`, avoiding zero-ID sentinel checks.
+
+Callbacks run synchronously in registration order when the client reads an event,
+including while waiting for a command ACK. No background reader, retries, run-open
+registry, or collection-completion protocol is introduced. Keep reading with
+`receive()` when the application wants messages outside a test. A completed run's
+identity remains usable; producers must preserve the original identity instead
+of assigning delayed data to whichever testcase is running now.
+
+Callbacks must not mutate the envelope or recursively read/request/close the
+client; recursive client operations raise `RuntimeError`. Callback exceptions
+propagate, and later callbacks for that event are not called. Subscription changes
+apply to the next event. No callback history is retained. During `request()`, events
+with matching subscribers are dispatched without retaining an extra raw copy;
+unhandled events are buffered up to `max_queued_events` for `receive()`. Such
+buffered events have already been dispatched once and are not replayed to new
+subscribers. Test inboxes and test result histories are bounded separately by the
+same limit. Applications control storage for their own subscribers.
+
+In pytest, the library supplies a session-scoped `tzen_client` fixture for the
+already configured target. For example, in `conftest.py`:
+
+```python
+import pytest
+
+@pytest.fixture(scope="session", autouse=True)
+def coverage_messages(tzen_client):
+    with open("coverage.log", "w", encoding="utf-8") as output:
+        def record(event):
+            output.write(event.log.message + "\n")
+        with tzen_client.events.subscribe(record, source=7):
+            yield
+```
+
+No change to testcase declarations is needed. A fixture or application can call
+`receive()` after a test when it has an application-specific reason to expect
+more messages; the library does not infer completion from a timeout.
+
+The schema retains the existing field numbers. Absent new fields mean source `0`
+and execution scope, so updated readers accept existing testcase logs. Old readers
+do not understand global/custom-source routing; update host and target together
+before using the new messages. Text remains bounded to 63 bytes in C; binary
+coverage chunks and structured measurements are outside this minimal extension.

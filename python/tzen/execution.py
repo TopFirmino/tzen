@@ -22,6 +22,7 @@ class CaseRun:
         self.on_event = on_event
         self.on_broken = on_broken
         self.auto_sync = auto_sync
+        self._inbox = None
         self.run_id: int | None = None
         self.result: TestResult | None = None
         self.events = []
@@ -32,7 +33,7 @@ class CaseRun:
         if self.run_id is not None:
             raise RuntimeError("a run context cannot be reused")
         try:
-            self.run_id = self.client.start(self.test.index)
+            self.run_id, self._inbox = self.client._start_execution(self.test.index, self.on_event)
         except BaseException:
             self.on_broken()
             raise
@@ -43,7 +44,7 @@ class CaseRun:
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError("test run exceeded deadline")
-        event = self.client.receive(remaining)
+        event = self.client._receive_execution(self._inbox, self.deadline)
         kind = event.WhichOneof("payload")
         if event.seq_id or kind not in ("test_event", "log"):
             raise RuntimeError("unexpected response in test event stream")
@@ -53,7 +54,6 @@ class CaseRun:
         if len(self.events) >= self.client.max_queued_events:
             raise BufferError("too many execution events")
         self.events.append(event)
-        self.on_event(event)
         if kind == "test_event":
             execution = event.test_event
             detail = execution.WhichOneof("event")
@@ -102,6 +102,13 @@ class CaseRun:
             self.on_broken()
 
     def __exit__(self, exc_type, exc, traceback):
+        try:
+            return self._exit(exc_type, exc, traceback)
+        finally:
+            if self._inbox is not None:
+                self._inbox.close()
+
+    def _exit(self, exc_type, exc, traceback):
         if exc_type is not None:
             if not issubclass(exc_type, AssertionError):
                 self.on_broken()

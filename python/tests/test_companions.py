@@ -177,3 +177,20 @@ def test_imported_helper_base_is_not_collected(pytester):
     p = pytester.path / "test_board.py"
     p.write_text("from helpers import Base\n" + p.read_text().replace("class remote(TzenCompanionTestCase)", "class remote(Base)"))
     pytester.runpytest("-q").assert_outcomes(passed=1)
+
+
+def test_custom_source_fixture_uses_shared_dispatcher(pytester):
+    companion(pytester, SOURCE)
+    fake = pytester.path / "fake_slave.py"
+    fake.write_text(fake.read_text().replace('self.run_id = command.execute_test.run_id',
+        'self.push(ttp.TargetToHost(log=ttp.LogEvent(source=7, scope=ttp.LogEvent.GLOBAL, message="coverage")))\n            self.run_id = command.execute_test.run_id'))
+    (pytester.path / "conftest.py").write_text('''import pytest
+@pytest.fixture(scope="session", autouse=True)
+def coverage(tzen_client):
+    received = []
+    with tzen_client.events.subscribe(received.append, source=7):
+        yield
+    assert len(received) == 1
+    assert received[0].log.message == "coverage"
+''')
+    pytester.runpytest("-q").assert_outcomes(passed=1)

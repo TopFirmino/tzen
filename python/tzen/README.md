@@ -1,6 +1,8 @@
 # Tzen pytest plugin
 
-Install with **python -m pip install -e .** from the repository root.
+Install from the repository root with `uv sync --locked --no-dev` or
+`python -m pip install -e .`. With uv, run the examples below in the uv
+environment by replacing `python` with `uv run --locked --no-dev python`.
 The plugin registers automatically. Python 3.10+ and pytest 8 or 9 are supported.
 
 ## Declare tests in normal pytest files

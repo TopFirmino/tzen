@@ -1,8 +1,8 @@
 """Subprocess pipes with periodic reads for the tzen client deadlines."""
-from pathlib import Path
 import queue
 import subprocess
 import threading
+from pathlib import Path
 
 
 class PipeTransport:

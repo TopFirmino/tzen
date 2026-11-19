@@ -3,12 +3,10 @@ import json
 from xml.etree import ElementTree
 
 import pytest
-
 from test_companions import companion
 from test_plugin import trace
 from tzen import TzenCompanionTestCase, step
 from tzen.cases import class_steps
-
 
 SOURCE = '''
 from pathlib import Path

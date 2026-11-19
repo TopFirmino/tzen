@@ -3,6 +3,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
 from google.protobuf.message import DecodeError
 
 from ttp.python import ttp

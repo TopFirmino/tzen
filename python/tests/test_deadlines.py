@@ -1,9 +1,10 @@
 """A silent execution may legitimately outlast a command-response deadline."""
 import time
 
-from tzen import Client
-from ttp.python import ttp
 from test_plugin import FAKE_SLAVE
+from tzen import Client
+
+from ttp.python import ttp
 
 
 def test_execution_uses_test_timeout(tmp_path):

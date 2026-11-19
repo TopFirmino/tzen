@@ -1,14 +1,14 @@
 """Launch the C host and exercise real TTP requests over binary pipes."""
 import argparse
 import logging
-from pathlib import Path
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
-from tzen import TestStatus
-from tzen.config import Settings
-from pipe_transport import PipeTransport
+from pipe_transport import PipeTransport  # noqa: E402
+from tzen import TestStatus  # noqa: E402
+from tzen.config import Settings  # noqa: E402
 
 
 def main():

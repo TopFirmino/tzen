@@ -2,10 +2,8 @@
 import json
 
 import pytest
-
 from test_companions import companion
 from test_plugin import trace
-
 
 SOURCE = '''
 from pathlib import Path

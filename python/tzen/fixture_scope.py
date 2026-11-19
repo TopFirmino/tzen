@@ -4,6 +4,7 @@ Pytest has no public nested function scope. Keep its version-sensitive request
 cache access here; setup itself still uses request.getfixturevalue(), including
 fixture dependency resolution, request.addfinalizer(), and yield fixtures.
 """
+from collections.abc import Callable
 from contextlib import contextmanager
 
 
@@ -19,7 +20,7 @@ class FixtureSetupError(RuntimeError):
 def step_fixture_scope(request):
     item = request.node
     existing = dict(request._fixture_defs)
-    finalizers = []
+    finalizers: list[Callable[[], None]] = []
     original = item.__dict__.get("addfinalizer")
     # Function-scoped subrequests attach their finalizers to the current item.
     # Broader scopes attach to their module/session and keep their normal life.

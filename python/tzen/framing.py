@@ -1,5 +1,6 @@
 """Harness wire framing; TTP handles protobuf serialization only."""
 from binascii import crc_hqx
+
 from ttp.python import ttp
 
 BytesLike = ttp.BytesLike

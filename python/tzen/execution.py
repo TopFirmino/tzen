@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+
 from ttp.python import ttp
 
 from .client import Client, TestInfo, TestResult
@@ -25,7 +26,7 @@ class CaseRun:
         self._inbox = None
         self.run_id: int | None = None
         self.result: TestResult | None = None
-        self.events = []
+        self.events: list[ttp.TargetToHost] = []
         self.pending_sync: int | None = None
         self.deadline = 0.0
 
@@ -49,7 +50,8 @@ class CaseRun:
         if event.seq_id or kind not in ("test_event", "log"):
             raise RuntimeError("unexpected response in test event stream")
         identity = getattr(event, kind)
-        if identity.run_id != self.run_id or identity.test_index != self.test.index:
+        run_id = self.run_id
+        if run_id is None or identity.run_id != run_id or identity.test_index != self.test.index:
             raise RuntimeError("event belongs to another test run")
         if len(self.events) >= self.client.max_queued_events:
             raise BufferError("too many execution events")
@@ -58,7 +60,7 @@ class CaseRun:
             execution = event.test_event
             detail = execution.WhichOneof("event")
             if detail == "finished":
-                self.result = TestResult(self.run_id, self.test, execution.finished.status, self.events)
+                self.result = TestResult(run_id, self.test, execution.finished.status, self.events)
             elif detail == "sync":
                 self.pending_sync = execution.sync.sync_id
         return event

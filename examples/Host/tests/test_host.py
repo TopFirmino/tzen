@@ -2,9 +2,7 @@
 import logging
 
 import pytest
-
-from tzen import TzenRemoteTestCase, TzenCompanionTestCase, step
-
+from tzen import TzenCompanionTestCase, TzenRemoteTestCase, step
 
 logger = logging.getLogger("host.python")
 

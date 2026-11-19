@@ -1,9 +1,7 @@
 """Exercise pytest itself against a slave speaking real framed TTP messages."""
 import pytest
-
 from tzen.config import ConfigurationError, Settings
 from tzen.transport import TzenTransport
-
 
 FAKE_SLAVE = '''
 from collections import deque

@@ -1,9 +1,12 @@
 """Class-based declarations with ordered, documented Python steps."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 import inspect
-from typing import Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from .execution import CaseRun
 
 
 @dataclass(frozen=True)
@@ -24,7 +27,7 @@ def step(description: str, *, critical: bool = False):
         validate_method(function)
         if hasattr(function, "__tzen_step__"):
             raise ValueError("a method may have only one @step decorator")
-        function.__tzen_step__ = Step(function.__name__, description, critical)
+        setattr(function, "__tzen_step__", Step(function.__name__, description, critical))
         return function
 
     return decorate
@@ -56,6 +59,7 @@ class TzenTestCase:
 
     __test__ = False
     target: str | None = None
+    run: CaseRun | None
 
 
 class TzenRemoteTestCase(TzenTestCase):

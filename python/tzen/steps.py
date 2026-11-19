@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .cases import TzenTestCase, Step, validate_method, class_fixtures
+from .cases import Step, TzenTestCase, class_fixtures, validate_method
 from .fixture_scope import step_fixture_scope
 
 

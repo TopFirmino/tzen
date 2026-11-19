@@ -1,14 +1,18 @@
 """Read documentation and validate class-based pytest declarations."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 import inspect
 import json
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from .cases import (
-    TzenTestCase, TzenRemoteTestCase, TzenCompanionTestCase,
-    Step, class_steps, class_fixtures,
+    Step,
+    TzenCompanionTestCase,
+    TzenRemoteTestCase,
+    TzenTestCase,
+    class_fixtures,
+    class_steps,
 )
 
 

@@ -2,8 +2,9 @@ import binascii
 import logging
 
 import pytest
-from ttp.python import ttp
 from tzen.config import Settings
+
+from ttp.python import ttp
 
 
 class Transport:

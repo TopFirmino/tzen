@@ -1,24 +1,23 @@
 """Validated TOML configuration and user transport construction."""
 from __future__ import annotations
 
-from dataclasses import dataclass
-from importlib import import_module
 import logging
 import math
+import sys
 import time
+from dataclasses import dataclass
 from functools import partial
-
-from .client import Client
-from .events import ExecutionRef, TargetLog
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
-from .events import LogHandler
+from .client import Client
+from .events import ExecutionRef, LogHandler, TargetLog
 from .sinks import FileLogSink
 
-try:
+if sys.version_info >= (3, 11):
     import tomllib
-except ModuleNotFoundError:  # Python 3.10
+else:
     import tomli as tomllib
 
 from .transport import TzenTransport

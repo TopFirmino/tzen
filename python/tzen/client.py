@@ -1,12 +1,14 @@
 """Single-threaded test harness client with bounded receive deadlines."""
+import time
 from collections import deque
 from contextlib import ExitStack
 from dataclasses import dataclass
-import time
+
 from ttp.python import ttp
 from tzen import framing
-from .transport import TzenTransport
+
 from .events import EventDispatcher, ExecutionRef, _ExecutionInbox, _target_log
+from .transport import TzenTransport
 
 
 class CommandError(RuntimeError):
@@ -55,7 +57,7 @@ class Client:
         self.max_queued_events = max_queued_events
         self._seq = self._run = 1
         self.events = EventDispatcher()
-        self._events = deque()
+        self._events: deque[ttp.TargetToHost] = deque()
         self._frame = bytearray()
         self._in_frame = self._dropping = False
 
@@ -156,13 +158,13 @@ class Client:
                 raise RuntimeError("unexpected response in test event stream")
         return inbox.events.popleft()
 
-    def discover(self):
+    def discover(self) -> list[TestInfo]:
         response = self.request(ttp.make_get_tests())
         if response.WhichOneof("payload") != "tests_count":
             raise RuntimeError("missing test count")
         return [self.get_test_info(i) for i in range(response.tests_count.total_tests)]
 
-    def get_test_info(self, index):
+    def get_test_info(self, index: int) -> TestInfo:
         response = self.request(ttp.make_get_test_info(index))
         if response.WhichOneof("payload") != "test_info" or response.test_info.index != index:
             raise RuntimeError("invalid test metadata")
@@ -192,6 +194,7 @@ class Client:
         """
         if timeout <= 0:
             raise ValueError("run timeout must be positive")
+        info: TestInfo | None
         if isinstance(test, TestInfo):
             info = test
         elif isinstance(test, str):
@@ -201,7 +204,7 @@ class Client:
         if info is None:
             raise KeyError(test)
         run_id, inbox = self._start_execution(info.index)
-        events = []
+        events: list[ttp.TargetToHost] = []
         deadline = time.monotonic() + timeout
         try:
             while True:

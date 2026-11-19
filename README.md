@@ -7,7 +7,13 @@ A cooperative C test harness, controlled from Python over CRC-protected TTP.
 - `python/tzen/`: Python master, pytest plugin, wire framing and transport protocol.
 - `examples/Arduino/`: Mega 2560 firmware and Python example using the package.
 
-Install into your Python environment:
+From the repository root, use uv to install the package and its development tools:
+
+```powershell
+uv sync --locked
+```
+
+To install into an existing Python environment with pip:
 
 ```powershell
 python -m pip install -e .
@@ -32,10 +38,27 @@ run-specific logs/results with independently polled workers. The older Arduino e
 before it can run against this implementation. Use the [Host example](examples/Host/C/README.md)
 for current command/response checks over binary subprocess pipes.
 
-Local regression checks (gcc required for C tests):
+## Checks before pushing
+
+Run these commands from the repository root. The TTP interoperability tests
+need GCC and the `nanopb` submodule (`git submodule update --init`).
 
 ```powershell
-python -m unittest discover -s ttp/tests -v
-python -m unittest discover -s testharness-c/tests -v
-python -m pytest python/tests -q
+uv run --locked ruff check .
+uv run --locked mypy
+uv run --locked pytest -q python/tests ttp/tests
 ```
+
+Ruff lints first-party Python files, including tests and examples. Mypy checks
+the `tzen` package and the Python TTP codec. GitHub Actions runs these checks on
+pushes and pull requests with Python 3.10 and 3.13.
+
+To run the native C harness tests locally, use
+`uv run --locked pytest -q testharness-c/tests`.
+
+`uv.lock` pins the project and development dependencies. When updating them,
+run `uv lock` and commit the lockfile with the dependency changes. For a
+runtime-only uv environment, use `uv sync --locked --no-dev`.
+
+When regenerating the Python protobuf bindings after a schema change, also
+generate the adjacent type stub with protoc's `--pyi_out=ttp/python/generated`.

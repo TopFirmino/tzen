@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import Union
+from typing import TYPE_CHECKING, Union
 
-try:
+if TYPE_CHECKING or __package__:
     from .generated import ttp_pb2
-except ImportError:
+else:
     from generated import ttp_pb2
 
 

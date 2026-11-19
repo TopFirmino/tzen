@@ -1,20 +1,33 @@
 """Collect explicit Tzen classes through pytest's normal Python discovery."""
 from __future__ import annotations
 
-from dataclasses import asdict
 import inspect
 import json
 import logging
-from pathlib import Path
 import warnings
+from collections.abc import Callable
+from dataclasses import asdict
+from pathlib import Path
 
 import pytest
+
 from ttp.python import ttp
 
+from .cases import (
+    TzenCompanionTestCase,
+    TzenRemoteTestCase,
+    TzenTestCase,
+    class_fixtures,
+)
+from .client import Client, TestInfo
 from .config import Settings
-from .declarations import declare, documentation_record, write_documentation, collection_description
+from .declarations import (
+    collection_description,
+    declare,
+    documentation_record,
+    write_documentation,
+)
 from .execution import RemoteFailure, TzenCase
-from .cases import TzenTestCase, TzenRemoteTestCase, TzenCompanionTestCase, class_fixtures
 from .steps import StepFailure, execute_steps
 
 
@@ -32,16 +45,17 @@ _STATE = pytest.StashKey["SessionState"]()
 class SessionState:
     """One lazily opened connection and registry shared by all test modules."""
 
-    def __init__(self, config, path):
+    def __init__(self, config: pytest.Config, path: Path | None):
         self.config = config
         self.path = path
         self.offline = config.getoption("tzen_offline")
-        self.client = None
-        self.registry = None
-        self.settings = None
+        self.client: Client | None = None
+        self.registry: list[TestInfo] | None = None
+        self.settings: Settings | None = None
+        self.loaded_path: Path | None = None
         self.broken = False
-        self.error = None
-        self.targets = {}
+        self.error: str | None = None
+        self.targets: dict[str, str] = {}
 
     def bind(self, declaration, nodeid, module):
         target = declaration.documentation.target
@@ -87,32 +101,35 @@ def pytest_configure(config):
     if config.getoption("tzen_offline") and not config.getoption("collectonly"):
         raise pytest.UsageError("--tzen-offline requires --collect-only")
     selected = config.getoption("tzen_config")
-    path = Path(selected).resolve() if selected else None
-    if selected and (not path.is_file() or path.suffix != ".toml"):
+    path: Path | None = Path(selected).resolve() if selected else None
+    if path is not None and (not path.is_file() or path.suffix != ".toml"):
         raise pytest.UsageError("--tzen-config must name an existing .toml file")
     config.stash[_STATE] = SessionState(config, path)
 
 
 def _execution_function(declaration):
     cls = declaration.implementation
+    execute: Callable[..., None]
     if declaration.documentation.companion:
         steps = declaration.documentation.steps
         names = dict.fromkeys(("tzen_case", "request", *class_fixtures(cls, steps)))
 
-        def execute(**kwargs):
+        def execute_companion(**kwargs):
             execute_steps(cls, steps, kwargs["tzen_case"], kwargs,
                           kwargs["request"].node.step_results)
 
-        execute.__signature__ = inspect.Signature([
+        setattr(execute_companion, "__signature__", inspect.Signature([
             inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY) for name in names
-        ])
+        ]))
+        execute = execute_companion
     else:
-        def execute(tzen_case):
+        def execute_remote(tzen_case):
             with tzen_case.run(auto_sync=True):
                 pass
+        execute = execute_remote
 
     execute.__doc__ = collection_description(declaration)
-    execute.pytestmark = getattr(cls, "pytestmark", [])
+    setattr(execute, "pytestmark", getattr(cls, "pytestmark", []))
     return execute
 
 
@@ -183,6 +200,10 @@ def tzen_case(request):
     slave = item.config.stash[_STATE]
     if slave.broken:
         pytest.skip("Slave connection is unusable after an earlier protocol/transport error")
+    settings = slave.settings
+    client = slave.client
+    if settings is None or client is None or item.test is None:
+        raise RuntimeError("tzen_case requires a configured target")
     logger = logging.getLogger(f"tzen.target.test[{item.test.name}]")
 
     def broken():
@@ -198,7 +219,7 @@ def tzen_case(request):
         elif event.test_event.WhichOneof("event") == "sync":
             logger.info("Sync %d: waiting", event.test_event.sync.sync_id)
 
-    case = TzenCase(slave.client, item.test, slave.settings.test_timeout, record, broken)
+    case = TzenCase(client, item.test, settings.test_timeout, record, broken)
     yield case
     # Covers misuse such as entering a context manually and abandoning it.
     if case.execution is not None:
@@ -209,7 +230,7 @@ def tzen_case(request):
             item.user_properties.extend([("tzen_index", item.test.index),
                                          ("tzen_run_id", case.execution.run_id)])
         if case.execution.result is not None:
-            slave.settings.receive_after_test(slave.client, case.execution.result)
+            settings.receive_after_test(client, case.execution.result)
 
 
 @pytest.hookimpl(wrapper=True)

@@ -2,11 +2,17 @@
 from collections import deque
 
 import pytest
-
-from tzen import Client, EventDispatcher, ExecutionRef, SOURCE_TEST, execution_of
+from tzen import (
+    SOURCE_TEST,
+    Client,
+    EventDispatcher,
+    ExecutionRef,
+    execution_of,
+    framing,
+)
 from tzen.client import TestInfo as RemoteTestInfo
 from tzen.execution import CaseRun
-from tzen import framing
+
 from ttp.python import ttp
 
 

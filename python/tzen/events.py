@@ -1,9 +1,9 @@
 """Synchronous event subscriptions. No threads, transport ownership or retries."""
 from __future__ import annotations
 
+import logging
 from collections import deque
 from dataclasses import dataclass
-import logging
 from enum import IntEnum
 from typing import Callable, Protocol
 
@@ -51,6 +51,7 @@ class TestStatus(IntEnum):
 
 def execution_of(event: ttp.TargetToHost) -> ExecutionRef | None:
     kind = event.WhichOneof("payload")
+    identity: ttp.TestEvent | ttp.LogEvent
     if kind == "test_event":
         identity = event.test_event
     elif kind == "log" and event.log.scope == ttp.LogEvent.EXECUTION:
@@ -150,7 +151,7 @@ class _ExecutionInbox:
     """Default test routing uses the same subscriptions exposed to applications."""
     def __init__(self, dispatcher, execution, limit, on_received=None):
         self.on_received = on_received
-        self.events = deque()
+        self.events: deque[ttp.TargetToHost] = deque()
         self.limit = limit
         self._subscriptions = [
             dispatcher.subscribe(self._append, execution=execution, kind="test_event"),

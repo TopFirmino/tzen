@@ -5,7 +5,6 @@ import sys
 from xml.etree import ElementTree
 
 import pytest
-
 from test_plugin import prepare, trace
 
 

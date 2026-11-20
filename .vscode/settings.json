@@ -4,5 +4,5 @@
 
 {
     "python-envs.defaultEnvManager": "ms-python.python:venv",
-    "cmake.sourceDirectory": "C:/Programming/mini_tzen/nanopb"
+    "cmake.sourceDirectory": "${workspaceFolder}/nanopb"
 }

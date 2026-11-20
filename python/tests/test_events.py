@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Routing over actual framed messages, including events interleaved with ACKs."""
 from collections import deque
 

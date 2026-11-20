@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 CC = gcc
 PYTHON ?= python
 CPPFLAGS += -I. -I../../../testharness-c/inc

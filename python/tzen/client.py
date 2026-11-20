@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Single-threaded test harness client with bounded receive deadlines."""
 import time
 from collections import deque

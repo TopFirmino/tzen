@@ -1,3 +1,9 @@
+/*
+ * Tzen
+ * Author: L. Furcas
+ * SPDX-License-Identifier: MPL-2.0
+ */
+
 /* Focused execution-channel tests. RX and wire framing have separate suites. */
 #include "../src/tzen.c"
 #include <assert.h>

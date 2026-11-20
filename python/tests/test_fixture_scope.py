@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Fixture lifetime boundaries within a single collected C/Python testcase."""
 import json
 

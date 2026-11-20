@@ -1,3 +1,9 @@
+/*
+ * Tzen
+ * Author: L. Furcas
+ * SPDX-License-Identifier: MPL-2.0
+ */
+
 #include "tzen.h"
 #include "ttp.h"
 #include <assert.h>

@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Subprocess pipes with periodic reads for the tzen client deadlines."""
 import queue
 import subprocess

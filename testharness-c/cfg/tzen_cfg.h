@@ -1,4 +1,10 @@
 /*
+ * Tzen
+ * Author: L. Furcas
+ * SPDX-License-Identifier: MPL-2.0
+ */
+
+/*
     Description: Contains all configuration variables for the tzen environment.
 
     Author: TopFirmino (L. Furcas)

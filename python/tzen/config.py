@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Validated TOML configuration and user transport construction."""
 from __future__ import annotations
 

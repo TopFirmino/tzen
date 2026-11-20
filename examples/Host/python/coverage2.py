@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Example of an application-owned log sink configured in tzen-host.toml."""
 import json
 from pathlib import Path

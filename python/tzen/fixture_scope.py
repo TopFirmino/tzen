@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Step-local lifetimes for ordinary pytest function-scoped fixtures.
 
 Pytest has no public nested function scope. Keep its version-sensitive request

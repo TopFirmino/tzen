@@ -1,3 +1,9 @@
+/*
+ * Tzen
+ * Author: L. Furcas
+ * SPDX-License-Identifier: MPL-2.0
+ */
+
 #include "ttp.h"
 
 #include "pb_decode.h"

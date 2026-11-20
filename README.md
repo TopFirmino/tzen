@@ -1,3 +1,9 @@
+<!--
+Tzen
+Author: L. Furcas
+SPDX-License-Identifier: MPL-2.0
+-->
+
 # Tzen
 
 A cooperative C test harness, controlled from Python over CRC-protected TTP.
@@ -60,5 +66,10 @@ To run the native C harness tests locally, use
 run `uv lock` and commit the lockfile with the dependency changes. For a
 runtime-only uv environment, use `uv sync --locked --no-dev`.
 
-When regenerating the Python protobuf bindings after a schema change, also
-generate the adjacent type stub with protoc's `--pyi_out=ttp/python/generated`.
+After a TTP schema change, run `ttp\generate_pb_files.bat` to regenerate the C
+and Python bindings and the Python type stub with their license notices.
+
+## License
+
+Tzen by L. Furcas is licensed under the [Mozilla Public License 2.0](LICENSE).
+The nanopb submodule retains its own [license](https://github.com/nanopb/nanopb/blob/bf966422f6bb48fec975520e396f50f6db2049e5/LICENSE.txt).

@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Synchronous event subscriptions. No threads, transport ownership or retries."""
 from __future__ import annotations
 

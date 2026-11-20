@@ -1,3 +1,7 @@
+// Tzen
+// Author: L. Furcas
+// SPDX-License-Identifier: MPL-2.0
+
 {
     "python-envs.defaultEnvManager": "ms-python.python:venv",
     "cmake.sourceDirectory": "C:/Programming/mini_tzen/nanopb"

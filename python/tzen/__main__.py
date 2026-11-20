@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Offline documentation through ordinary pytest discovery."""
 import argparse
 import subprocess

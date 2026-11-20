@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Exercise pytest itself against a slave speaking real framed TTP messages."""
 import pytest
 from tzen.config import ConfigurationError, Settings

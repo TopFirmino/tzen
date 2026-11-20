@@ -1,3 +1,9 @@
+/*
+ * Tzen
+ * Author: L. Furcas
+ * SPDX-License-Identifier: MPL-2.0
+ */
+
 /* Inspect private RX diagnostics without extending the public harness API. */
 #include "../src/tzen.c"
 

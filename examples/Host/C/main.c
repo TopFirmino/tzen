@@ -1,3 +1,9 @@
+/*
+ * Tzen
+ * Author: L. Furcas
+ * SPDX-License-Identifier: MPL-2.0
+ */
+
 #include "tzen.h"
 #include "tzen_host_cfg.h"
 #include "testcases.h"

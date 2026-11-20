@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Read documentation and validate class-based pytest declarations."""
 from __future__ import annotations
 

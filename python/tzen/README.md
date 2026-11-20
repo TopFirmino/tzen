@@ -1,4 +1,13 @@
+<!--
+Tzen
+Author: L. Furcas
+SPDX-License-Identifier: MPL-2.0
+-->
+
 # Tzen pytest plugin
+
+Tzen by L. Furcas is licensed under MPL-2.0, including the `py.typed` marker
+distributed with the package. See the repository's `LICENSE` for the full text.
 
 Install from the repository root with `uv sync --locked --no-dev` or
 `python -m pip install -e .`. With uv, run the examples below in the uv

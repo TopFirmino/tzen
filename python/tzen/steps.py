@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Execute the methods of one class-based companion as one pytest testcase."""
 from __future__ import annotations
 

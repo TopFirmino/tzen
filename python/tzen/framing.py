@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Harness wire framing; TTP handles protobuf serialization only."""
 from binascii import crc_hqx
 

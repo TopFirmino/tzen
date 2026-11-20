@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Class-based declarations with ordered, documented Python steps."""
 from __future__ import annotations
 

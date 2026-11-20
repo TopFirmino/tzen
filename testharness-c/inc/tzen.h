@@ -1,4 +1,10 @@
 /*
+ * Tzen
+ * Author: L. Furcas
+ * SPDX-License-Identifier: MPL-2.0
+ */
+
+/*
     Description: Header file for tzen testharness API.
 
     Author: TopFirmino (L. Furcas)

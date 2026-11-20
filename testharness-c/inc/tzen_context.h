@@ -1,3 +1,9 @@
+/*
+ * Tzen
+ * Author: L. Furcas
+ * SPDX-License-Identifier: MPL-2.0
+ */
+
 /* Configuration-dependent execution context and scratchpad access. */
 #ifndef TZEN_CONTEXT_H
 #define TZEN_CONTEXT_H

@@ -1,3 +1,9 @@
+/*
+ * Tzen
+ * Author: L. Furcas
+ * SPDX-License-Identifier: MPL-2.0
+ */
+
 #ifndef HOST_TESTCASES_H
 #define HOST_TESTCASES_H
 #include "tzen_types.h"

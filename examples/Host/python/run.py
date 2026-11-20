@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Launch the C host and exercise real TTP requests over binary pipes."""
 import argparse
 import logging

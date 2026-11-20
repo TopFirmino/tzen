@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 [tzen]
 command_timeout = 5.0
 test_timeout = 15.0

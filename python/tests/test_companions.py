@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Native Python collection, class binding, fixtures, and documentation."""
 import json
 import subprocess

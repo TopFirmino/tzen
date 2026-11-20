@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Class collection, shared instance state, ordered steps and failure policy."""
 import json
 from xml.etree import ElementTree

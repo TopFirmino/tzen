@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """A silent execution may legitimately outlast a command-response deadline."""
 import time
 

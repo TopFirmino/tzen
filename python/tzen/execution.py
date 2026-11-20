@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """A synchronous, run-scoped API for Python/C companion tests."""
 from __future__ import annotations
 

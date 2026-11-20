@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Byte transports used by the harness client; protobuf codecs live in ttp; framing lives in tzen."""
 import time
 from typing import Protocol, runtime_checkable

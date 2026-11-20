@@ -1,4 +1,8 @@
 @echo off
+REM Tzen
+REM Author: L. Furcas
+REM SPDX-License-Identifier: MPL-2.0
+
 setlocal
 
 REM Regenerate protobuf bindings for both TTP implementations.
@@ -20,6 +24,7 @@ if not exist "%PY_OUT%" mkdir "%PY_OUT%"
 python -m grpc_tools.protoc ^
   -I "%PROTO_DIR%" ^
   --python_out="%PY_OUT%" ^
+  --pyi_out="%PY_OUT%" ^
   "%PROTO_FILE%"
 if errorlevel 1 exit /b 1
 
@@ -30,7 +35,9 @@ python "%NANOPB_GENERATOR%" ^
   "%PROTO_FILE%"
 if errorlevel 1 exit /b 1
 
-type nul > "%PY_OUT%\__init__.py"
+if not exist "%PY_OUT%\__init__.py" type nul > "%PY_OUT%\__init__.py"
+python "%TTP_DIR%add_generated_headers.py"
+if errorlevel 1 exit /b 1
 
 echo Generated TTP protobuf files in:
 echo   %C_OUT%

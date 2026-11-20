@@ -1,4 +1,10 @@
 /*
+ * Tzen
+ * Author: L. Furcas
+ * SPDX-License-Identifier: MPL-2.0
+ */
+
+/*
     Description: Public types shared by tzen configuration and the engine.
 
     Author: TopFirmino (L. Furcas)

@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Collect explicit Tzen classes through pytest's normal Python discovery."""
 from __future__ import annotations
 

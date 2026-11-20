@@ -1,3 +1,9 @@
+/*
+ * Tzen
+ * Author: L. Furcas
+ * SPDX-License-Identifier: MPL-2.0
+ */
+
 /* Inspect RX diagnostics to verify the complete TX -> RX path. */
 #include "../src/tzen.c"
 

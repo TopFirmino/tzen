@@ -1,4 +1,10 @@
 /*
+ * Tzen
+ * Author: L. Furcas
+ * SPDX-License-Identifier: MPL-2.0
+ */
+
+/*
     Description: Main Tzen implementation.
 
     Author: TopFirmino (L. Furcas)

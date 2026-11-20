@@ -1,3 +1,9 @@
+<!--
+Tzen
+Author: L. Furcas
+SPDX-License-Identifier: MPL-2.0
+-->
+
 # C test harness
 
 `src/tzen.c` implements bounded RX/TX, discovery, test execution, synchronization,

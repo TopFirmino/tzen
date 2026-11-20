@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Public C/Python protobuf interoperability tests."""
 import subprocess
 import tempfile

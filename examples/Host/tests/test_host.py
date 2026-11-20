@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Class declarations and ordered Python steps for the C host registry."""
 import logging
 

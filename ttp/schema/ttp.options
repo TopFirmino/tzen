@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 # Fixed string buffers for the current, package-less ttp.proto schema.
 # max_size includes the terminating NUL; limits below are UTF-8 bytes.
 

@@ -1,3 +1,7 @@
+# Tzen
+# Author: L. Furcas
+# SPDX-License-Identifier: MPL-2.0
+
 """Post-log destinations for configured target sources."""
 import base64
 from pathlib import Path

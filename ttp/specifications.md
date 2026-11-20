@@ -1,3 +1,9 @@
+<!--
+Tzen
+Author: L. Furcas
+SPDX-License-Identifier: MPL-2.0
+-->
+
 # TTP (Tzen Test Protocol)
 
 This specification describes the current `schema/ttp.proto` and

@@ -33,6 +33,10 @@ For the C host example, build with `make -C examples/Host/C`, then run
 `python -m pytest examples/Host/tests --tzen-config examples/Host/tzen-host.toml -v` from the repository
 root. Its intentional failure is reported as a failed pytest test.
 
+The [Ada host example](examples/Host/ADA/README.md) builds with GNAT and GPRbuild
+and runs the same C harness through [Ada bindings](testharness-c/ada/README.md).
+The Python pipe launcher defaults to C and accepts `--slave ada`.
+
 The host example includes Python-owned documentation for all three tests and a
 Python companion coordinating with C at sync 42. See the
 [host guide](examples/Host/C/README.md) for offline JSON documentation export,

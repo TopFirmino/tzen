@@ -2,7 +2,7 @@
 # Author: L. Furcas
 # SPDX-License-Identifier: MPL-2.0
 
-"""Launch the C host and exercise real TTP requests over binary pipes."""
+"""Launch the C or Ada host and exercise real TTP requests over binary pipes."""
 import argparse
 import logging
 import sys
@@ -17,15 +17,21 @@ from tzen.config import Settings  # noqa: E402
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--slave", choices=("c", "ada"), help="Host implementation (default: c)")
     parser.add_argument("--executable", type=Path)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(name)s  %(message)s", stream=sys.stdout)
-    settings = Settings.load(Path(__file__).resolve().parents[1] / "tzen-host.toml")
-    transport = PipeTransport(args.executable.resolve()) if args.executable else None
+    host_directory = Path(__file__).resolve().parents[1]
+    settings = Settings.load(host_directory / "tzen-host.toml")
+    slave = args.slave or settings.parameters.get("slave", "c")
+    if slave == "ada":
+        settings = Settings.load(host_directory / "ADA" / "tzen-host.toml")
+    executable = args.executable.resolve() if args.executable else settings.parameters.get("executable")
+    transport = PipeTransport(executable, slave=slave)
     with settings.open_client(transport) as client:
         tests = client.discover()
         if [test.name for test in tests] != ["Yield and pass", "Synchronize and pass", "Expected failure"]:
-            raise RuntimeError("Unexpected C test registry")
+            raise RuntimeError(f"Unexpected {slave} test registry")
         for test in tests:
             result = client.run(test.index)
             for record in result.logs:

@@ -5,6 +5,7 @@
  */
 
 #include "tzen.h"
+#include "host_io.h"
 #include "tzen_host_cfg.h"
 #include "testcases.h"
 #include <stdio.h>

@@ -1,0 +1,38 @@
+--  Tzen
+--  Author: L. Furcas
+--  SPDX-License-Identifier: MPL-2.0
+
+project Tzen_Host_Ada is
+   Root := Tzen_Host_Ada'Project_Dir & "../../..";
+
+   for Languages use ("Ada", "C");
+   for Source_Dirs use
+     (".", "../common", Root & "/testharness-c/ada",
+      Root & "/testharness-c/src", Root & "/ttp/C/src",
+      Root & "/ttp/C/generated", Root & "/nanopb");
+   for Source_Files use
+     ("tzen_host_ada.adb", "tzen_host_cfg.h", "host_pipe.ads",
+      "ada_testcases.ads", "ada_testcases.adb",
+      "tzen_bindings.ads", "tzen_bindings.adb",
+      "host_io.c", "tzen_ada.c", "tzen.c", "ttp.c", "ttp.pb.c",
+      "pb_common.c", "pb_decode.c", "pb_encode.c");
+   for Object_Dir use "obj";
+   for Exec_Dir use ".";
+   for Main use ("tzen_host_ada.adb");
+
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnat2012", "-gnatwa", "-g");
+      for Default_Switches ("C") use
+        ("-std=c11", "-Wall", "-Wextra", "-Wpedantic", "-g",
+         "-DTZEN_CONFIG_HEADER=""tzen_host_cfg.h""",
+         "-I" & Tzen_Host_Ada'Project_Dir,
+         "-I" & Root & "/testharness-c/inc",
+         "-I" & Root & "/ttp/C/inc",
+         "-I" & Root & "/ttp/C/generated",
+         "-I" & Root & "/nanopb");
+   end Compiler;
+
+   package Builder is
+      for Executable_Suffix use ".exe";
+   end Builder;
+end Tzen_Host_Ada;

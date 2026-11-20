@@ -9,6 +9,8 @@ test_timeout = 15.0
 [tzen.transport]
 class = "examples.Host.python.pipe_transport:PipeTransport"
 
+# For the Ada host, use ADA/tzen-host.toml.
+
 [[tzen.logging.sources]]
 source = 1
 logger = "tzen.target.system"

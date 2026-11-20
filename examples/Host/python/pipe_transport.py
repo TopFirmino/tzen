@@ -10,9 +10,13 @@ from pathlib import Path
 
 
 class PipeTransport:
-    def __init__(self, executable=None):
+    def __init__(self, executable=None, *, slave="c"):
+        hosts = {"c": ("C", "tzen_host.exe"), "ada": ("ADA", "tzen_host_ada.exe")}
+        if slave not in hosts:
+            raise ValueError("Host slave must be 'c' or 'ada'")
         if executable is None:
-            executable = Path(__file__).resolve().parents[1] / "C" / "tzen_host.exe"
+            directory, name = hosts[slave]
+            executable = Path(__file__).resolve().parents[1] / directory / name
         self.process = subprocess.Popen([str(executable)], stdin=subprocess.PIPE,
                                         stdout=subprocess.PIPE, bufsize=0)
         self._bytes = queue.Queue(maxsize=65536)
@@ -43,7 +47,7 @@ class PipeTransport:
             return self._bytes.get(timeout=0.05)
         except queue.Empty:
             if self._eof.is_set():
-                raise EOFError("C host closed stdout")
+                raise EOFError("Host slave closed stdout")
             return b""
 
     def write(self, data):
@@ -51,7 +55,7 @@ class PipeTransport:
         while view:
             written = self.process.stdin.write(view)
             if not written:
-                raise BrokenPipeError("C host pipe write failed")
+                raise BrokenPipeError("Host slave pipe write failed")
             view = view[written:]
 
     def close(self):

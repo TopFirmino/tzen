@@ -120,15 +120,12 @@
 
 
 
-/* Runtime configuration and host pipe interface. */
+/* Runtime harness configuration. */
 #include "tzen_types.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
 extern const TzenConfig_t host_configuration;
-bool host_io_init(void);
-/* Returns 1 for a byte, 0 on timeout, -1 at EOF/error. */
-int host_read_byte(uint8_t *byte);
 #ifdef __cplusplus
 }
 #endif
